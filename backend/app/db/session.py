@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -54,3 +55,18 @@ async def close_db_engine() -> None:
         await _engine.dispose()
         _engine = None
         _session_maker = None
+
+
+@asynccontextmanager
+async def transaction(session: AsyncSession) -> AsyncGenerator[None, None]:
+    """Explicit unit of work: commit if the block succeeds, roll everything back if it raises.
+
+    Services wrap every state-changing operation (mutation + activity events + idempotency record)
+    in one ``async with transaction(session):`` so they commit or fail together.
+    """
+    try:
+        yield
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise

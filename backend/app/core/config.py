@@ -1,6 +1,5 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,6 +27,8 @@ class Settings(BaseSettings):
     app_name: str
     debug: bool
     environment: str
+    # Non-secret tuning knob; safe default so existing .env files keep working.
+    access_token_expire_minutes: int = 60
 
 
 @lru_cache
@@ -52,10 +53,3 @@ def get_settings() -> Settings:
         raise RuntimeError(
             f"Application configuration error: Invalid configuration settings. {exc.error_count()} error(s) detected."
         ) from None
-
-
-def __getattr__(name: str) -> Any:
-    """Allow module-level attribute access to settings for backwards compatibility."""
-    if name == "settings":
-        return get_settings()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
