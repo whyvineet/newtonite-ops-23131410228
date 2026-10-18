@@ -8,10 +8,25 @@ export interface LoginResponse {
 }
 
 
+export interface RegisterPayload {
+  name: string
+  email: string
+  password: string
+  team_name?: string
+  role?: string
+}
+
 export async function login(email: string, password: string): Promise<LoginResponse> {
   return request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: { email, password },
+  })
+}
+
+export async function register(payload: RegisterPayload): Promise<LoginResponse> {
+  return request<LoginResponse>('/auth/register', {
+    method: 'POST',
+    body: payload,
   })
 }
 

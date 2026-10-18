@@ -13,9 +13,6 @@ from app.core.exceptions import AuthenticationError
 JWT_ALGORITHM = "HS256"
 
 _hasher = PasswordHasher()
-# Verified against when the e-mail is unknown so that response time does not reveal which accounts exist.
-DUMMY_PASSWORD_HASH = _hasher.hash("not-a-real-password")
-
 
 def hash_password(password: str) -> str:
     return _hasher.hash(password)

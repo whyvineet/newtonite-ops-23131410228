@@ -4,7 +4,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getMe, login as apiLogin } from '../api/auth'
+import { getMe, login as apiLogin, register as apiRegister, type RegisterPayload } from '../api/auth'
 import { getStoredToken, setStoredToken } from '../api/client'
 import { listMyTeams } from '../api/teams'
 import type { Role, Team, User } from '../types/api'
@@ -82,6 +82,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const register = async (payload: RegisterPayload) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const res = await apiRegister(payload)
+      setStoredToken(res.access_token)
+      setToken(res.access_token)
+      await fetchUserAndTeams()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Registration failed'
+      setError(msg)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const logout = () => {
     setStoredToken(null)
     setToken(null)
@@ -113,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         login,
+        register,
         logout,
         setCurrentTeam,
         refreshUserData: fetchUserAndTeams,

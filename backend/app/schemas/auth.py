@@ -15,6 +15,22 @@ class LoginRequest(BaseModel):
     password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]
+    email: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)
+    ]
+    password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
+    team_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ] = "Platform Ops"
+    role: Role = Role.LEAD
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -2,10 +2,30 @@ from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.security import create_access_token
-from app.schemas.auth import LoginRequest, MembershipRead, MeResponse, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    MembershipRead,
+    MeResponse,
+    RegisterRequest,
+    TokenResponse,
+)
 from app.services import auth as auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=TokenResponse, status_code=201)
+async def register(payload: RegisterRequest, session: DbSession) -> TokenResponse:
+    user = await auth_service.register(
+        session,
+        name=payload.name,
+        email=payload.email,
+        password=payload.password,
+        team_name=payload.team_name,
+        role=payload.role,
+    )
+    token, expires_in = create_access_token(user.id)
+    return TokenResponse(access_token=token, expires_in=expires_in)
 
 
 @router.post("/login", response_model=TokenResponse)
