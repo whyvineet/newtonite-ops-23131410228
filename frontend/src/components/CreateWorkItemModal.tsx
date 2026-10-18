@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { generateIdempotencyKey } from '../api/client'
 import { createItem } from '../api/workItems'
 import {
   ALL_PRIORITIES,
@@ -31,6 +32,9 @@ export default function CreateWorkItemModal({
   const [assigneeId, setAssigneeId] = useState<string>('')
   const [dueDate, setDueDate] = useState<string>('')
 
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generateIdempotencyKey())
+  const lastPayloadStringRef = useRef<string>('')
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,7 +59,17 @@ export default function CreateWorkItemModal({
         due_at: dueDate ? new Date(dueDate).toISOString() : null,
       }
 
-      const newItem = await createItem(payload)
+      const payloadString = JSON.stringify(payload)
+      let keyToUse = idempotencyKey
+
+      // If the user modified any form fields, generate a new key for the new payload
+      if (lastPayloadStringRef.current && lastPayloadStringRef.current !== payloadString) {
+        keyToUse = generateIdempotencyKey()
+        setIdempotencyKey(keyToUse)
+      }
+      lastPayloadStringRef.current = payloadString
+
+      const newItem = await createItem(payload, keyToUse)
       onItemCreated(newItem)
       onClose()
     } catch (err: unknown) {

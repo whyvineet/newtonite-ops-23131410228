@@ -1,6 +1,6 @@
 # Operations Under Pressure — Newtonite Ops Challenge
 
-An internal work-management system that enables teams to create, assign, track, and resolve operational work items under strict concurrency, accountability, and authorization requirements.
+An internal work-management system that enables operations teams to create, assign, track, and resolve operational work items under strict concurrency, accountability, and authorization requirements.
 
 ---
 
@@ -9,12 +9,13 @@ An internal work-management system that enables teams to create, assign, track, 
 | Layer | Technology | Purpose |
 |---|---|---|
 | **Backend** | [FastAPI](https://fastapi.tiangolo.com/) + [Python 3.11](https://www.python.org/) | High-performance asynchronous REST API |
-| **Package Manager** | [uv](https://docs.astral.sh/uv/) | Fast, deterministic Python dependency resolution |
-| **ORM & Database** | [SQLAlchemy 2.0 (asyncio)](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [PostgreSQL 16](https://www.postgresql.org/) | Fully asynchronous relational persistence |
+| **Package Manager** | [uv](https://docs.astral.sh/uv/) | Fast, deterministic Python dependency resolution with `uv.lock` |
+| **ORM & Database** | [SQLAlchemy 2.0 (asyncio)](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [PostgreSQL 16](https://www.postgresql.org/) | Fully asynchronous relational persistence with row-level locks |
 | **Migrations** | [Alembic](https://alembic.sqlalchemy.org/) | Schema migration tracking with async engine support |
-| **Frontend** | [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vite.dev/) + [Tailwind CSS](https://tailwindcss.com/) | Responsive client application with dev proxy |
-| **Orchestration** | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/) | Reproducible multi-container stack (DB, Backend, Frontend) |
-| **Testing & Linting**| [pytest](https://pytest.org/) + [HTTPX](https://www.python-httpx.org/) + [Ruff](https://docs.astral.sh/ruff/) | Automated test fixtures and high-speed linting |
+| **Frontend** | [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vite.dev/) + [Tailwind CSS v4](https://tailwindcss.com/) | Responsive client application with dev proxy and robust conflict UX |
+| **Orchestration** | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/) | Reproducible multi-container stack (PostgreSQL, Backend, Frontend) |
+| **Testing & Linting**| [pytest](https://pytest.org/) + [HTTPX](https://www.python-httpx.org/) + [Ruff](https://docs.astral.sh/ruff/) + [ESLint](https://eslint.org/) | Automated test fixtures, PostgreSQL concurrency barriers, and linting |
+| **CI / Automation** | [GitHub Actions](https://github.com/features/actions) | Deterministic continuous integration running full test suites and lint gates |
 
 ---
 
@@ -32,12 +33,23 @@ cp .env.example .env
 *(On Windows PowerShell: `Copy-Item .env.example .env`)*
 
 ### 3. Launch Services
-Start all three services (PostgreSQL, Backend, Frontend):
+Start all three container services (PostgreSQL, Backend, Frontend):
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-### 4. Access Points
+### 4. Initialize Database Schema and Demo Seed Data
+> [!IMPORTANT]
+> The primary startup path requires running schema migrations and demo seeding explicitly:
+```bash
+# Apply Alembic schema migrations
+docker compose exec backend uv run alembic upgrade head
+
+# Seed initial demonstration accounts, teams, and sample items
+docker compose exec backend uv run python -m app.seed
+```
+
+### 5. Access Points
 - **Frontend App:** [http://localhost:5173](http://localhost:5173)
 - **Backend API Root:** [http://localhost:8000/](http://localhost:8000/)
 - **Interactive OpenAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -71,17 +83,20 @@ uv sync
 # Run database migrations
 uv run alembic upgrade head
 
+# Seed idempotent local demo data (refuses to run when ENVIRONMENT=production)
+uv run python -m app.seed
+
 # Start development server with hot reload
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### 3. Frontend Setup
-From the `frontend/` directory in a new terminal:
+From the `frontend/` directory in a separate terminal:
 ```bash
 cd frontend
 
-# Install node modules
-npm install
+# Install node dependencies deterministically
+npm ci
 
 # Start Vite development server
 npm run dev
@@ -90,172 +105,119 @@ The frontend automatically proxies `/api` and `/health` requests to `http://loca
 
 ---
 
-## Backend API
+## Authentication, Registration, and Security Architecture
 
-All endpoints live under `/api/v1` (interactive docs at `/docs`). Errors from application logic use one JSON shape,
-`{"error": {"code": "...", "message": "..."}}`; request-validation errors keep FastAPI's standard `422` body.
+### Public Workspace Registration (Hardened)
+Public registration (`POST /api/v1/auth/register`) strictly follows the **new workspace creation** security model:
+1. **Forbidden Role Field:** The registration payload accepts `name`, `email`, `password`, and `team_name`. Any client attempting to supply `role` (`admin`, `lead`, etc.) is rejected with `422 Unprocessable Entity` (`extra="forbid"`).
+2. **Strict Workspace Ownership:** The newly registered user receives the **Lead** role strictly within the newly created team workspace they own.
+3. **No Unauthenticated Team Hijacking:** Registration never attaches a registrant to an existing team. If the requested team name already exists, the server returns an explicit `409 Conflict` (`team_already_exists`) and leaves the existing team and its memberships untouched.
+4. **Database Uniqueness & Concurrency:** Case-insensitive email uniqueness and team name uniqueness are enforced at the PostgreSQL constraint level. Concurrent duplicate attempts are translated into clean `409 Conflict` client responses instead of unhandled 500s.
+5. **Transactional Invariant:** User creation, team creation, and membership creation execute within a single atomic database transaction. Any failure results in an immediate rollback leaving zero partial state.
+6. **Password Security:** Passwords require a minimum of 8 characters, are hashed using Argon2id, and password hashes are never exposed in responses or tokens.
+7. **Production Secret Enforcement:** If `ENVIRONMENT=production`, application startup fails fast if the default development example secret is detected or if `SECRET_KEY` is shorter than 32 characters.
 
-### First run (local)
+### Demo Accounts (LOCAL DEVELOPMENT ONLY)
 
-```bash
-cd backend
-uv sync
-uv run alembic upgrade head          # create the schema
-uv run python -m app.seed            # idempotent demo data (refuses to run when ENVIRONMENT=production)
-uv run uvicorn app.main:app --reload
-```
+Every seeded account uses the password **`demo-password-123`**. These credentials are local-only; the seeder refuses to execute when `ENVIRONMENT=production`.
 
-With Docker Compose: `docker compose exec backend uv run alembic upgrade head` then
-`docker compose exec backend uv run python -m app.seed`.
-
-### Demo accounts (LOCAL DEVELOPMENT ONLY)
-
-Every seeded account uses the password **`demo-password-123`**. These credentials are public; never seed a shared or
-production database. Passwords are stored only as Argon2id hashes.
-
-| Email | Platform Ops | Customer Support |
-|---|---|---|
-| `alice.lead@demo.test` | Lead | - |
-| `bob.member@demo.test` | Member | - |
-| `carol.admin@demo.test` | Admin | - |
-| `dave.viewer@demo.test` | Viewer | - |
-| `erin.lead@demo.test` | Member | Lead |
-| `frank.member@demo.test` | - | Member |
-| `grace.admin@demo.test` | - | Admin |
-| `henry.disabled@demo.test` | Member (account disabled; cannot log in) | - |
-
-### Endpoints
-
-| Method & path | Purpose |
-|---|---|
-| `POST /auth/login`, `GET /auth/me` | Obtain a JWT; current user and team memberships |
-| `GET /teams`, `GET /teams/{id}/members` | Teams I belong to; members of one of them (for assignment pickers) |
-| `GET /items` | Filters `team_id,status,priority,assignee_id,type,q`; keyset `cursor` + `limit` (1-100) |
-| `POST /items` | Create (requires `Idempotency-Key` header) |
-| `GET /items/{id}`, `PATCH /items/{id}` | Detail; edit title/description/type/priority/due date (requires `expected_version`) |
-| `POST /items/{id}/claim` | Atomic claim of an open, unassigned item (moves it to In Progress) |
-| `POST /items/{id}/assign` | Assign / reassign (Lead, Admin); optional `expected_version` |
-| `POST /items/{id}/transition` | `{to_status, expected_version}`; only the four workflow steps exist |
-| `GET/POST /items/{id}/comments`, `GET /items/{id}/activity` | Comments; read-only audit timeline |
-| `GET /dashboard?view=assigned_to_me\|unassigned_urgent\|awaiting_my_approval` | Server-side views with `total` |
-
-### Permission matrix (single source of truth: `app/services/permissions.py`)
-
-Roles are per team. Admin is a team administrator, not a global one.
-
-| Action | Viewer | Member | Lead | Admin |
-|---|---|---|---|---|
-| View team items, comments, activity | yes | yes | yes | yes |
-| Create items, comment, claim | no | yes | yes | yes |
-| Edit basic fields | no | creator/assignee | yes | yes |
-| Change priority, assign/reassign | no | no | yes | yes |
-| Start work / submit for approval | no | if assignee | yes | yes |
-| **Approve** (Awaiting Approval -> Resolved) | no | no | **yes** | **no** |
-| Close resolved work | no | no | yes | yes |
-| Manage team memberships | no | no | no | policy defined, **no endpoint yet** |
-
-Items of teams you do not belong to answer `404` everywhere (list filters, detail, mutations, comments, activity);
-a team member lacking the role gets `403`.
-
-### Behaviour worth knowing
-
-* **Concurrency.** Claim is one `UPDATE ... WHERE id=? AND assignee_id IS NULL AND status='open' RETURNING`; every other
-  mutation is a compare-and-swap on `version`. Losers get `409` (`claim_conflict` / `version_conflict`).
-* **Idempotent create.** `INSERT ... ON CONFLICT DO NOTHING` on `(user_id, endpoint, key)` inside the creating
-  transaction: concurrent duplicates wait for the winner, then replay its stored response (`Idempotent-Replayed: true`).
-  Same key + different payload -> `409 idempotency_key_reused`. Missing header -> `400`.
-* **Transactions.** Each mutation, its activity event(s) and any idempotency record commit or roll back together
-  (`app/db/session.py::transaction`).
-* **Pagination.** Keyset on `(created_at, id)`; `next_cursor` is opaque, bad cursors give `400 invalid_cursor`.
-* **Dashboard definitions.** `assigned_to_me` and `unassigned_urgent` exclude Closed items.
-  `awaiting_my_approval` lists Awaiting-Approval items in teams where my role may approve (Lead).
-* **Assign** does not change status; **claim** sets the claimer as assignee *and* moves Open -> In Progress.
-  Starting an Open item via `transition` requires an assignee. Closed items cannot be edited; resolved/closed items
-  cannot be reassigned. Viewers and disabled users cannot be assignees.
-
-### Known limitations
-
-* No endpoint to manage memberships (the `manage_memberships` policy exists, nothing uses it yet).
-* `q` search is a case-insensitive substring match (`ILIKE`) without a trigram index; fine for this scale.
-* A Lead who is also the assignee can approve their own work (no four-eyes rule was specified).
-* No transactional outbox / background jobs (not required).
-
-## Testing & Code Quality
-
-### Backend
-From the `backend/` directory:
-```bash
-# Run test suite (needs PostgreSQL; uses a dedicated database, see below)
-uv run pytest
-
-# Check formatting and linting
-uv run ruff check .
-uv run ruff format --check .
-
-# Auto-fix formatting
-uv run ruff format .
-```
-
-**Test database.** Tests use `TEST_DATABASE_URL` (default
-`postgresql+asyncpg://postgres:postgres@localhost:5432/test_newtonite`), never `DATABASE_URL`, and refuse to run unless
-the database name contains `test` because they truncate tables and exercise `alembic downgrade`. Create it once with
-`docker compose exec db createdb -U postgres test_newtonite`. The suite migrates it to `head` itself.
-Concurrency tests use real PostgreSQL row locks and a barrier fixture (`rendezvous`) so races are deterministic.
-
-### Frontend
-From the `frontend/` directory:
-```bash
-# Typecheck and production bundle build
-npm run build
-
-# Lint frontend code
-npm run lint
-```
+| Email | Platform Ops | Customer Support | Role Privileges |
+|---|---|---|---|
+| `alice.lead@demo.test` | Lead | - | Team Lead: full approval authority, assignments, transitions |
+| `bob.member@demo.test` | Member | - | Standard operator: can claim, execute work, submit for approval |
+| `carol.admin@demo.test` | Admin | - | Workspace admin: assignments, priority tuning (cannot approve) |
+| `dave.viewer@demo.test` | Viewer | - | Read-only observation: no edits, transitions, or comments |
+| `erin.lead@demo.test` | Member | Lead | Multi-tenant user: Member in Alpha, Lead in Beta |
+| `frank.member@demo.test` | - | Member | Single-tenant member |
+| `grace.admin@demo.test` | - | Admin | Single-tenant admin |
+| `henry.disabled@demo.test` | Disabled | - | Deactivated account: cannot log in or use tokens (401) |
 
 ---
 
-## Repository Structure
+## Backend API Specification
 
-```
-newtonite-ops-23131410228/
-├── .env.example                 # Environment configuration template
-├── .gitignore                   # Ignore rules (protects .env while tracking .env.example)
-├── docker-compose.yml           # Multi-container orchestration (db, backend, frontend)
-├── README.md                    # Project documentation
-├── ENGINEERING_DECISIONS.md     # Architectural and design decision records
-│
-├── backend/
-│   ├── Dockerfile               # Lean uv-powered Python 3.11 image
-│   ├── pyproject.toml           # Backend dependencies and pytest configuration
-│   ├── uv.lock                  # Deterministic dependency lockfile
-│   ├── alembic.ini              # Alembic migration runner configuration
-│   ├── migrations/              # Database schema migrations
-│   │   ├── env.py               # Dynamic asyncpg migration engine setup
-│   │   └── versions/            # Migration version scripts (0001_initial_schema.py)
-│   ├── app/
-│   │   ├── main.py              # FastAPI application entrypoint & root endpoints
-│   │   ├── seed.py              # Idempotent development demo seeder
-│   │   ├── api/                 # API router and dependencies (deps.py, v1/router.py, v1/endpoints/)
-│   │   ├── core/                # 12-factor config, exceptions, security (Argon2, JWT)
-│   │   ├── db/                  # Base declarative model and async session / transaction manager
-│   │   ├── models/              # SQLAlchemy relational models (User, Team, Membership, WorkItem, ...)
-│   │   ├── schemas/             # Strict Pydantic v2 validation models
-│   │   └── services/            # Business logic, permissions, concurrency, audit, idempotency
-│   └── tests/                   # Automated pytest suite (100 unit, integration, and concurrency tests)
-│
-└── frontend/
-    ├── Dockerfile               # Node 22 Alpine development container
-    ├── package.json             # React 19, TypeScript, Tailwind dependencies
-    ├── vite.config.ts           # Vite bundler configuration with API proxy
-    ├── index.html               # Frontend HTML shell
-    └── src/
-        ├── App.tsx              # Operations dashboard shell & navigation
-        ├── main.tsx             # Application bootstrap & StrictMode
-        ├── index.css            # Tailwind theme tokens & base styles
-        ├── api/                 # API client & domain request modules (auth, teams, workItems)
-        ├── components/          # Reusable operational UI components & modals
-        ├── context/             # Authentication & session state management
-        ├── types/               # Type-safe contract definitions matching backend schemas
-        └── utils/               # Frontend role authorization & policy helpers
+All API endpoints are mounted under `/api/v1` (interactive OpenAPI documentation available at `/docs`).
+
+| Method & Path | Purpose | Concurrency & Validation Contract |
+|---|---|---|
+| `POST /auth/register` | Create a new team workspace and lead account | Accepts name, email, password, team_name (no role accepted) |
+| `POST /auth/login` | Authenticate and obtain JWT access token | Normalizes email; returns `401 invalid_credentials` for bad passwords or disabled accounts |
+| `GET /auth/me` | Current user profile and team memberships | Requires Bearer token; includes per-team roles |
+| `GET /teams` | List teams current user belongs to | Tenant-scoped |
+| `GET /teams/{id}/members` | Active members of a team | For assignment pickers; requires team membership |
+| `GET /items` | Keyset paginated work items | Filters: `team_id, status, priority, assignee_id, type, q`; keyset `cursor` + `limit` (1-100) |
+| `POST /items` | Create work item | Requires `Idempotency-Key` header; replayed responses return `Idempotent-Replayed: true` |
+| `GET /items/{id}` | Detailed work item view | Scoped to caller's team; foreign teams return `404` |
+| `PATCH /items/{id}` | Edit title, description, priority, type, due date | Optimistic concurrency: requires matching `expected_version` |
+| `POST /items/{id}/claim` | Atomically claim an open, unassigned item | Atomic SQL predicate: sets caller as assignee and moves status to `in_progress` |
+| `POST /items/{id}/assign` | Assign or reassign to team member | Requires Lead or Admin; verifies `expected_version` |
+| `POST /items/{id}/transition` | Workflow transition | Verifies valid workflow step and `expected_version` |
+| `GET /items/{id}/comments` | Keyset paginated comments | Bounded cursor pagination (`limit` default 20) |
+| `POST /items/{id}/comments` | Add operational comment | Recorded in audit timeline in same transaction |
+| `GET /items/{id}/activity` | Immutable audit trail | Bounded keyset pagination (`(created_at, id)`) ordered by `clock_timestamp()` |
+| `GET /dashboard` | Server-side constrained view pages | Views: `assigned_to_me`, `unassigned_urgent`, `awaiting_my_approval` |
+| `GET /dashboard/summary` | Real-time aggregate count metrics | Database SQL `COUNT(*)` aggregates across the entire team dataset |
+
+---
+
+## Frontend Reliability & Request Consistency
+
+- **Recoverable Session Management:** A confirmed `401` terminates an expired session. Transient network errors, timeouts, or 5xx server responses do not log the user out; the session token is preserved, and actionable reconnection states are presented.
+- **Independent Bootstrapping:** User authentication is separated from team workspace loading. Network failures while loading teams provide a dedicated "Retry Loading Teams" action without fabricating an empty team state.
+- **Race Condition Prevention & Request Cancellation:** Text search is debounced by 250ms. Filter and search updates abort in-flight `fetch` calls using `AbortController` and enforce a request sequence ID guard so older responses never overwrite newer result sets.
+- **Pagination State Invariants:** Whenever the active team, view, search query, or filter parameters change, cursor pagination resets to the initial page.
+- **Optimistic Concurrency UX:** When a concurrent update produces an `HTTP 409 Conflict`, the UI preserves user edits and displays a conflict banner offering:
+  - **Reload Latest Version:** Overwrites local state with current server values.
+  - **Preserve My Edits:** Re-syncs the `expected_version` target with the latest server version while keeping modified fields intact.
+- **True Idempotent Retries:** Work item creation generates UUIDv4 idempotency keys (`crypto.randomUUID()`). Retrying a failed attempt reuses the identical key, ensuring the server replays the existing record rather than creating a duplicate. Modifying form inputs rotates the key to match the new payload fingerprint.
+- **Bounded History Loading:** Detail modals fetch comments and activity logs in bounded pages (20 items) with "Load Older Comments" and "Load Older Events" actions rather than loading unbounded historical arrays.
+
+---
+
+## Testing & Quality Gates
+
+### Backend Tests
+From the `backend/` directory:
+```bash
+# Run complete test suite (unit, integration, concurrency)
+uv run pytest
+
+# Check code formatting and static analysis
+uv run ruff check .
+uv run ruff format --check .
+
+# Auto-format codebase
+uv run ruff format .
 ```
 
+**Test Database Safeguards:** Tests execute strictly against `TEST_DATABASE_URL` (default: `postgresql+asyncpg://postgres:postgres@localhost:5432/test_newtonite`) and enforce that the database name must contain `"test"` before executing destructive `TRUNCATE` operations or migration downgrades. Create the test database once with:
+```bash
+docker compose exec db createdb -U postgres test_newtonite
+```
+Concurrency tests leverage PostgreSQL row-level locks and barrier fixtures (`rendezvous`) to verify race conditions deterministically.
+
+### Frontend Quality Gates
+From the `frontend/` directory:
+```bash
+# Typecheck TypeScript and compile production bundle
+npm run build
+
+# Run ESLint validation
+npm run lint
+```
+
+### Continuous Integration (CI)
+A lightweight GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
+1. Spins up an isolated PostgreSQL 16 container service.
+2. Installs Python 3.11 and dependencies deterministically via `uv sync --frozen`.
+3. Runs `ruff check .`, `ruff format --check .`, and the full `pytest` suite against `test_newtonite`.
+4. Installs Node dependencies via `npm ci` and runs `npm run lint` and `npm run build`.
+
+---
+
+## Known Limitations
+
+- **Transactional Outbox & Background Worker:** Intentionally deferred in favor of synchronous transactional integrity and bounded cursor pagination. Work item mutations, audit events, and idempotency records are committed atomically in PostgreSQL without external message broker dependencies (e.g. Redis, Kafka, Celery).
+- **Membership Administration Endpoints:** Role policies are defined and enforced in `app/services/permissions.py`, but administrative member invite/removal endpoints are deferred.
+- **Search Indexing:** Text search (`q`) uses index-assisted PostgreSQL `ILIKE` substring matching suitable for team-scale operations queues rather than full-text trigram (`pg_trgm`) indexes.
+- **Lead Self-Approval:** A Team Lead who creates or is assigned an item can approve it; an explicit four-eyes principle was not specified.

@@ -105,7 +105,10 @@ export async function request<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (
+      (error instanceof DOMException && error.name === 'AbortError') ||
+      (error instanceof Error && error.name === 'AbortError')
+    ) {
       throw error
     }
     throw new ApiClientError(
@@ -173,5 +176,8 @@ export async function request<T>(
 }
 
 export function generateIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
   return `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }

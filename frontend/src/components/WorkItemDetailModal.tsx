@@ -61,12 +61,17 @@ export default function WorkItemDetailModal({
   const [item, setItem] = useState<WorkItem | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
   const [comments, setComments] = useState<Comment[]>([])
+  const [commentsNextCursor, setCommentsNextCursor] = useState<string | null>(null)
   const [activities, setActivities] = useState<ActivityEvent[]>([])
+  const [activityNextCursor, setActivityNextCursor] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'activity'>('details')
 
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false)
+  const [isLoadingMoreActivity, setIsLoadingMoreActivity] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null)
   const [isConflict, setIsConflict] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -91,6 +96,7 @@ export default function WorkItemDetailModal({
     async function loadData() {
       setIsLoading(true)
       setError(null)
+      setRefreshWarning(null)
       setIsConflict(false)
       try {
         const itemData = await getItem(itemId, controller.signal)
@@ -108,17 +114,25 @@ export default function WorkItemDetailModal({
         const teamMembers = await listTeamMembers(itemData.team_id)
         if (!unmounted) setMembers(teamMembers)
 
-        // Load comments and activities in parallel
+        // Load comments and activities bounded in parallel
         const [commentsRes, activityRes] = await Promise.all([
-          listComments(itemId, undefined, 50, controller.signal),
-          listActivity(itemId, undefined, 50, controller.signal),
+          listComments(itemId, undefined, 20, controller.signal),
+          listActivity(itemId, undefined, 20, controller.signal),
         ])
         if (!unmounted) {
           setComments(commentsRes.comments)
+          setCommentsNextCursor(commentsRes.next_cursor)
           setActivities(activityRes.events)
+          setActivityNextCursor(activityRes.next_cursor)
         }
       } catch (err: unknown) {
         if (!unmounted) {
+          if (
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            (err instanceof Error && err.name === 'AbortError')
+          ) {
+            return
+          }
           const msg = err instanceof Error ? err.message : 'Failed to load work item'
           setError(msg)
         }
@@ -135,28 +149,68 @@ export default function WorkItemDetailModal({
     }
   }, [itemId])
 
-  const refreshItemOnly = async () => {
-    setIsConflict(false)
+  const refreshItemOnly = async (preserveUserEdits = false) => {
+    setRefreshWarning(null)
     try {
       const refreshed = await getItem(itemId)
       setItem(refreshed)
-      setEditTitle(refreshed.title)
-      setEditDescription(refreshed.description)
-      setEditType(refreshed.type)
-      setEditPriority(refreshed.priority)
-      setEditDueDate(refreshed.due_at ? refreshed.due_at.substring(0, 10) : '')
+      if (!preserveUserEdits && !isEditing) {
+        setEditTitle(refreshed.title)
+        setEditDescription(refreshed.description)
+        setEditType(refreshed.type)
+        setEditPriority(refreshed.priority)
+        setEditDueDate(refreshed.due_at ? refreshed.due_at.substring(0, 10) : '')
+      }
       setSelectedAssignee(refreshed.assignee_id || '')
       onItemUpdated(refreshed)
+      setIsConflict(false)
 
-      const [commentsRes, activityRes] = await Promise.all([
-        listComments(itemId, undefined, 50),
-        listActivity(itemId, undefined, 50),
-      ])
-      setComments(commentsRes.comments)
-      setActivities(activityRes.events)
-      setError(null)
-    } catch {
-      // ignore
+      try {
+        const [commentsRes, activityRes] = await Promise.all([
+          listComments(itemId, undefined, 20),
+          listActivity(itemId, undefined, 20),
+        ])
+        setComments(commentsRes.comments)
+        setCommentsNextCursor(commentsRes.next_cursor)
+        setActivities(activityRes.events)
+        setActivityNextCursor(activityRes.next_cursor)
+      } catch (feedErr: unknown) {
+        const msg = feedErr instanceof Error ? feedErr.message : 'Failed to reload recent activity'
+        setRefreshWarning(`Item state updated, but timeline refresh encountered an issue: ${msg}`)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to refresh latest item state'
+      setRefreshWarning(`Action completed, but failed to reload latest item details: ${msg}. Click retry to refresh.`)
+    }
+  }
+
+  const handleLoadMoreActivity = async () => {
+    if (!activityNextCursor || isLoadingMoreActivity) return
+    setIsLoadingMoreActivity(true)
+    try {
+      const res = await listActivity(itemId, activityNextCursor, 20)
+      setActivities((prev) => [...prev, ...res.events])
+      setActivityNextCursor(res.next_cursor)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load older activity'
+      setError(msg)
+    } finally {
+      setIsLoadingMoreActivity(false)
+    }
+  }
+
+  const handleLoadMoreComments = async () => {
+    if (!commentsNextCursor || isLoadingMoreComments) return
+    setIsLoadingMoreComments(true)
+    try {
+      const res = await listComments(itemId, commentsNextCursor, 20)
+      setComments((prev) => [...prev, ...res.comments])
+      setCommentsNextCursor(res.next_cursor)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load older comments'
+      setError(msg)
+    } finally {
+      setIsLoadingMoreComments(false)
     }
   }
 
@@ -166,7 +220,7 @@ export default function WorkItemDetailModal({
       (err.status === 409 || err.code === 'version_conflict')
     ) {
       setIsConflict(true)
-      setError('This item has changed since you opened it. Reload the latest version before saving.')
+      setError('This item has changed on the server. Your changes conflict with the newest server state.')
     } else {
       setIsConflict(false)
       setError(err instanceof Error ? err.message : defaultMessage)
@@ -178,6 +232,7 @@ export default function WorkItemDetailModal({
     setIsSubmitting(true)
     setError(null)
     setSuccessMessage(null)
+    setRefreshWarning(null)
     setIsConflict(false)
     try {
       const updated = await claimItem(item.id)
@@ -187,7 +242,6 @@ export default function WorkItemDetailModal({
       await refreshItemOnly()
     } catch (err: unknown) {
       handleError(err, 'Failed to claim work item')
-      await refreshItemOnly()
     } finally {
       setIsSubmitting(false)
     }
@@ -198,6 +252,7 @@ export default function WorkItemDetailModal({
     setIsSubmitting(true)
     setError(null)
     setSuccessMessage(null)
+    setRefreshWarning(null)
     setIsConflict(false)
     try {
       const updated = await assignItem(item.id, {
@@ -211,7 +266,6 @@ export default function WorkItemDetailModal({
       await refreshItemOnly()
     } catch (err: unknown) {
       handleError(err, 'Failed to assign work item')
-      await refreshItemOnly()
     } finally {
       setIsSubmitting(false)
     }
@@ -222,6 +276,7 @@ export default function WorkItemDetailModal({
     setIsSubmitting(true)
     setError(null)
     setSuccessMessage(null)
+    setRefreshWarning(null)
     setIsConflict(false)
     try {
       const updated = await transitionItem(item.id, {
@@ -234,7 +289,6 @@ export default function WorkItemDetailModal({
       await refreshItemOnly()
     } catch (err: unknown) {
       handleError(err, 'Status transition failed')
-      await refreshItemOnly()
     } finally {
       setIsSubmitting(false)
     }
@@ -246,6 +300,7 @@ export default function WorkItemDetailModal({
     setIsSubmitting(true)
     setError(null)
     setSuccessMessage(null)
+    setRefreshWarning(null)
     setIsConflict(false)
     try {
       const updated = await updateItem(item.id, {
@@ -277,8 +332,9 @@ export default function WorkItemDetailModal({
       const added = await addComment(item.id, newComment.trim())
       setComments((prev) => [...prev, added])
       setNewComment('')
-      const activityRes = await listActivity(item.id, undefined, 50)
+      const activityRes = await listActivity(item.id, undefined, 20)
       setActivities(activityRes.events)
+      setActivityNextCursor(activityRes.next_cursor)
       setSuccessMessage('Comment added.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to post comment')
@@ -328,20 +384,51 @@ export default function WorkItemDetailModal({
         {isConflict && (
           <div
             role="alert"
-            className="mx-5 mt-3 flex items-center justify-between rounded border border-[#E8C8BC] bg-[#FDF0EE] p-3 text-xs text-[#A6261E]"
+            className="mx-5 mt-3 rounded border border-[#E8C8BC] bg-[#FDF0EE] p-3 text-xs text-[#A6261E]"
           >
             <div>
-              <p className="font-semibold">Concurrency Conflict</p>
-              <p className="mt-0.5">
-                This item has changed since you opened it. Reload the latest version before saving.
+              <p className="font-semibold">Version Conflict (409 Conflict)</p>
+              <p className="mt-0.5 leading-relaxed">
+                This work item was modified by another operator (currently v{item?.version || '?'}). Your submitted action targeted a stale version.
               </p>
             </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void refreshItemOnly(false)}
+                className="rounded bg-[#B85D3B] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#9E4C2E] transition-colors"
+              >
+                Reload latest server version
+              </button>
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await refreshItemOnly(true)
+                    setError(null)
+                  }}
+                  className="rounded border border-[#B85D3B] bg-white px-2.5 py-1 text-xs font-medium text-[#B85D3B] hover:bg-[#FDF0EE] transition-colors"
+                >
+                  Preserve my edits & update version target
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Refresh warning (action committed, refresh warning) */}
+        {refreshWarning && (
+          <div
+            role="status"
+            className="mx-5 mt-3 flex items-center justify-between rounded border border-[#E6D4A5] bg-[#FDF8EB] p-2.5 text-xs text-[#855D10]"
+          >
+            <span>{refreshWarning}</span>
             <button
               type="button"
               onClick={() => void refreshItemOnly()}
-              className="shrink-0 rounded bg-[#B85D3B] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#9E4C2E] transition-colors ml-3"
+              className="ml-3 font-semibold underline hover:text-[#5E4007] transition-colors shrink-0"
             >
-              Reload latest version
+              Retry
             </button>
           </div>
         )}
@@ -714,6 +801,19 @@ export default function WorkItemDetailModal({
                 </div>
               )}
 
+              {commentsNextCursor && (
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    disabled={isLoadingMoreComments}
+                    onClick={handleLoadMoreComments}
+                    className="rounded border border-[#E2E1DC] bg-white px-3 py-1.5 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] disabled:opacity-50 transition-colors"
+                  >
+                    {isLoadingMoreComments ? 'Loading older comments…' : 'Load Older Comments'}
+                  </button>
+                </div>
+              )}
+
               {/* Add comment */}
               {canComment(roleInCurrentTeam) ? (
                 <form onSubmit={handleAddComment} className="pt-2 border-t border-[#EAE9E4]">
@@ -777,6 +877,19 @@ export default function WorkItemDetailModal({
                     </div>
                   </div>
                 ))
+              )}
+
+              {activityNextCursor && (
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    disabled={isLoadingMoreActivity}
+                    onClick={handleLoadMoreActivity}
+                    className="rounded border border-[#E2E1DC] bg-white px-3 py-1.5 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] disabled:opacity-50 transition-colors"
+                  >
+                    {isLoadingMoreActivity ? 'Loading older events…' : 'Load Older Events'}
+                  </button>
+                </div>
               )}
             </div>
           )}

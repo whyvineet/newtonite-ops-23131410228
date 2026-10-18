@@ -13,7 +13,6 @@ export interface RegisterPayload {
   email: string
   password: string
   team_name?: string
-  role?: string
 }
 
 export async function login(email: string, password: string): Promise<LoginResponse> {

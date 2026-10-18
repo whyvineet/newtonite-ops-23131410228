@@ -1,153 +1,155 @@
-# Architecture & Engineering Decision Records (ADR)
+# Architecture & Engineering Decisions (ADR)
 
-This document records the foundational architectural decisions and trade-offs for the **Operations Under Pressure** system.
+This document records the foundational architectural decisions, alternatives evaluated, trade-offs, and verification strategies for the **Operations Under Pressure** system.
 
 ---
 
-## ADR 001: Web Framework Choice — FastAPI
+## Decision 1: Team-Scoped Server-Side Authorization & Strict Workspace Ownership
 
 ### Context
-The application is an internal work-management system requiring strict validation, authorization, and concurrency under operational pressure.
+In operational work-management systems, team members collaborate on incidents, tickets, and maintenance items. Unchecked horizontal privilege escalation (e.g. an operator in Alpha viewing or updating tickets in Beta) or vertical privilege escalation (e.g. an anonymous public registrant self-assigning `Lead` or `Admin` authority over an existing workspace) would violate operational integrity.
 
-### Decision
-Adopt **FastAPI** on Python 3.11 with Starlette and Uvicorn.
+### Alternatives Considered
+1. **Global User Roles:** Storing a single `role` column on the `users` table (e.g. system-wide Lead/Member).
+   - *Why rejected:* Real-world cross-functional operators hold different responsibilities across different teams (e.g. Lead in Customer Support, but standard Member in Platform Ops).
+2. **Client-Supplied Identity & Role Headers:** Allowing frontend clients or upstream proxies to pass `X-Role` or `X-Team-Id`.
+   - *Why rejected:* Public API clients can forge HTTP headers, creating severe security vulnerabilities.
+3. **Open Team Self-Registration:** Allowing public registrants to join any team by supplying a matching name and requested role.
+   - *Why rejected:* Created privilege escalation where an attacker could take over existing teams or claim unearned approval authority.
 
-### Rationale
-- **Asynchronous Concurrency:** Native `async`/`await` support across endpoint handlers and database calls prevents thread starvation under high I/O workloads.
-- **Type Safety & Data Validation:** Deep integration with Pydantic v2 ensures request and response schemas are strictly validated and serialized at runtime.
-- **Self-Documenting API:** Automatic OpenAPI 3.1 and Swagger UI generation at `/docs` simplifies frontend integration and automated client generation.
-- **Lightweight & Modular:** Avoids the heavy monolithic overhead of Django while providing greater structure and typed safety than Flask.
+### Choice (Implemented & Tested)
+- **Database Model:** Roles (`lead`, `admin`, `member`, `viewer`) are strictly defined on the `memberships` join table (`(user_id, team_id)` composite primary key).
+- **Public Registration Contract:** Registration (`POST /api/v1/auth/register`) strictly models **workspace creation**. It accepts `name`, `email`, `password`, and `team_name`, but **forbids** a `role` field (`extra="forbid"`, returning 422 if supplied).
+- **Creator Ownership:** The registrant receives the `Lead` role exclusively within the newly created team they instantiate.
+- **Conflict Isolation:** If the requested team name already exists, the server returns `409 Conflict` (`team_already_exists`) and leaves the existing team and all existing memberships untouched.
+- **Tenant Privacy (404 over 403):** Querying or mutating items belonging to a team the user does not belong to returns `404 Not Found`, rendering foreign items indistinguishable from non-existent resources to prevent enumeration attacks. Inside the team, unauthorized actions return `403 Forbidden`.
+- **Approval Exclusivity:** Only `Lead` has approval authority (`awaiting_approval` -> `resolved`). `Admin` is intentionally excluded from sign-off.
+
+### Trade-offs
+- An anonymous operator cannot browse or request to join existing teams without a future administrative invitation flow.
+- Every team query requires joining the `memberships` table, which is indexed on `(user_id, team_id)` and `(team_id)`.
 
 ---
 
-## ADR 002: Dependency Management — uv & pyproject.toml
+## Decision 2: Atomic Claim & Predicate-Locked Optimistic Concurrency
 
 ### Context
-Fast, reproducible, and deterministic dependency resolution is essential for local development, CI/CD, and Docker builds.
+When high-priority operational items enter the queue, multiple operators may concurrently attempt to claim the ticket or mutate its status, assignments, or due dates. Uncontrolled concurrent writes lead to lost updates, duplicate claims, and desynchronized operational handoffs.
 
-### Decision
-Use **uv** (by Astral) as the primary package manager, using `pyproject.toml` for dependency specifications and `uv.lock` as the single source of truth.
+### Alternatives Considered
+1. **Pessimistic Locking (`SELECT ... FOR UPDATE`):** Acquiring a row-level lock on read before writing.
+   - *Why rejected for claims:* Requires holding open locks across multiple queries, introducing connection pool starvation and deadlock risk under high concurrency.
+2. **Distributed Locks (Redis/Redlock):** Coordinating locks through an external key-value store.
+   - *Why rejected:* Adds unnecessary operational complexity, external network hops, and failure modes when PostgreSQL's native row locks already provide ACID atomicity.
+3. **Last-Write-Wins (Unconditional `UPDATE`):** Overwriting database records without version checks.
+   - *Why rejected:* Silently clobbers concurrent edits made by peer operators.
 
-### Rationale
-- **Performance:** Package installation and resolution speeds are 10–100x faster than traditional `pip` and `pip-tools`.
-- **Reproducibility:** Cross-platform `uv.lock` guarantees identical dependency trees across Windows host environments and Linux container runtimes.
-- **Container Integration:** Official `ghcr.io/astral-sh/uv` multi-stage binary eliminates the need to export and synchronize duplicate `requirements.txt` files.
+### Choice (Implemented & Tested)
+- **Atomic Claim (Single SQL Predicate):**
+  Claiming is executed as a single atomic statement:
+  ```sql
+  UPDATE work_items
+  SET assignee_id = :user_id, status = 'in_progress', version = version + 1
+  WHERE id = :id AND assignee_id IS NULL AND status = 'open'
+  RETURNING *;
+  ```
+  PostgreSQL serializes concurrent claims on the row lock. The winner claims the item; any losing concurrent transactions re-evaluate the predicate against the winner's committed row, fail the `assignee_id IS NULL AND status = 'open'` check, return zero rows, and raise `409 Conflict` (`claim_conflict`).
+- **Optimistic Concurrency Control (Version Compare-and-Swap):**
+  All other mutations (detail updates, reassignments, status transitions) increment an integer `version` column and enforce `WHERE id = :id AND version = :expected_version`.
+- **Conflict-Aware Frontend UX:**
+  When `409 Conflict` (`version_conflict`) is received, the frontend preserves the operator's active edits and displays a clear conflict resolution banner offering:
+  1. *Reload Latest Version:* Overwrites local state with current server values.
+  2. *Preserve My Edits:* Re-syncs the `expected_version` target with the server's newest version while keeping dirty form edits intact.
+
+### Trade-offs
+- Operators encountering a conflict must acknowledge that a concurrent update occurred rather than having their changes silently merged or overwritten.
+- Clients must track and submit `expected_version` with every mutation payload.
 
 ---
 
-## ADR 003: Persistence & Async ORM — PostgreSQL 16 + SQLAlchemy 2.0 + asyncpg
+## Decision 3: Database-Backed Idempotency & Safe Network Retries
 
 ### Context
-Work items, assignments, status transitions, and audit logs require relational integrity, transactional guarantees, and concurrency controls.
+Unreliable networks, browser timeouts, and connection dropouts can cause the client to lose the server's HTTP response even after a work item has been successfully committed to the database. If the user clicks "Create" or "Retry", standard APIs risk duplicating the ticket.
 
-### Decision
-Use **PostgreSQL 16** with **SQLAlchemy 2.0 (asyncio)** and the **asyncpg** binary driver.
+### Alternatives Considered
+1. **Client-Side Button Disabling Alone:** Disabling the submit button while a request is in flight.
+   - *Why rejected:* Fails if the network connection drops mid-flight and the user clicks retry, or if the page is refreshed.
+2. **In-Memory / Redis Key Cache:** Caching idempotency keys with short TTLs in memory.
+   - *Why rejected:* A cache eviction or node restart allows duplicate creates; furthermore, in-memory keys cannot participate in the ACID database transaction.
 
-### Rationale
-- **Relational Integrity:** Foreign keys, check constraints, and unique constraints enforce business rules at the database level.
-- **Concurrency Controls:** PostgreSQL provides native support for `FOR UPDATE` row-level locking and transaction isolation levels needed to handle concurrent assignments.
-- **Async Driver Performance:** `asyncpg` is the fastest PostgreSQL driver for Python, operating asynchronously without blocking the event loop.
-- **Modern SQLAlchemy 2.0 API:** Uses typed `select()` constructs and clean session lifecycle management via `AsyncSession`.
+### Choice (Implemented & Tested)
+- **Relational Idempotency Table:** `idempotency_keys` table stores `(user_id, endpoint, key, request_hash, response_status, response_body)`.
+- **Concurrent Atomic Reservation:**
+  The creating transaction executes an `INSERT ... ON CONFLICT DO NOTHING` on the unique index `(user_id, endpoint, key)`. Concurrent identical requests block on the PostgreSQL index until the primary transaction commits, then detect the existing row and replay the stored response with the `Idempotent-Replayed: true` header.
+- **Payload Fingerprinting:**
+  Incoming payloads are canonically serialized and hashed with SHA-256. If a client attempts to reuse an existing idempotency key with an altered payload, the server returns `409 Conflict` (`idempotency_key_reused`).
+- **Frontend Key Lifecycle:**
+  The frontend generates idempotency keys using `crypto.randomUUID()`. When a submission fails due to a network dropout or 5xx error, the client reuses the exact same key for the retry. If the operator alters form inputs (changing the payload), a fresh UUIDv4 key is generated to prevent payload conflict.
+
+### Trade-offs
+- Creation transactions incur the write cost of one extra row in `idempotency_keys`.
+- Requires periodic cleanup of expired idempotency keys in high-volume production deployments.
 
 ---
 
-## ADR 004: Database Migrations — Alembic with Async Template
+## Decision 4: Transactional Audit History, Persistence Invariants, & Session Recovery
 
 ### Context
-Database schema changes must be version-controlled, repeatable, and capable of running in automated deployment pipelines.
+High-reliability operations demand an immutable audit trail of who changed what, when, and why. Incomplete transactions that persist work items without corresponding audit events (or vice versa) create audit blind spots and data corruption.
 
-### Decision
-Adopt **Alembic** configured with the `async` environment template.
+### Alternatives Considered
+1. **Asynchronous Audit Logging:** Publishing audit events to a message broker (RabbitMQ/Kafka) or background thread after committing the mutation.
+   - *Why rejected:* If the message broker is unavailable or the process crashes between commit and publish, the audit record is lost permanently.
+2. **Database Triggers:** Writing audit rows via PostgreSQL procedural triggers (`PL/pgSQL`).
+   - *Why rejected:* Triggers hide business logic from application code, complicate testing and migrations, and make it difficult to attribute actor identities from JWT tokens.
 
-### Rationale
-- **Environment-Driven Configuration:** `migrations/env.py` dynamically sources `settings.database_url` from application settings rather than hardcoding static DSNs in `alembic.ini`.
-- **Asyncpg Compatibility:** The `async_engine_from_config` configuration executes migrations safely within the asyncio loop.
-- **Offline & Online Execution:** Supports both live migration execution (`alembic upgrade head`) and static SQL script generation (`alembic upgrade head --sql`) for dry-runs.
+### Choice (Implemented & Tested)
+- **Single Unit-of-Work Boundary:**
+  Every state mutation executes inside an explicit transaction context (`async with transaction(session)`). The entity update, staged activity log rows (`record_event`), and idempotency response commit or roll back together.
+- **Append-Only Immutability:**
+  The `/items/{id}/activity` endpoint is strictly read-only. No `POST`, `PATCH`, or `DELETE` endpoints exist for activity events.
+- **Chronological Ordering via `clock_timestamp()`:**
+  Activity timestamps use PostgreSQL's `clock_timestamp()`, ensuring that sequential events generated within the same transaction reflect exact microsecond ordering.
+- **Database Invariants:**
+  - Foreign keys enforce that an assigned user must be a member of the work item's team: `FOREIGN KEY (assignee_id, team_id) REFERENCES memberships(user_id, team_id)`.
+  - Check constraints ensure `email = lower(email)` and enforce valid statuses, priorities, and workflow rules.
+- **Frontend Session Recoverability:**
+  A confirmed `401 Unauthorized` clears the session. Transient network dropouts (status 0) and 5xx errors preserve the user's stored token and display actionable retry states instead of prematurely logging the user out.
+
+### Trade-offs
+- Mutations take slightly longer to commit because activity rows are written synchronously within the transaction.
+- Activity rows cannot be edited or erased by operators, requiring compensatory workflow actions instead of retroactive edits.
 
 ---
 
-## ADR 005: 12-Factor Configuration & Secrets Management
+## Decision 5: Keyset Cursor Pagination, Server-Side Aggregation, & Scope Boundaries
 
 ### Context
-Secrets and environment variables must not be hardcoded in repository files, even for development.
+As operations teams resolve hundreds or thousands of work items, loading unbounded arrays into the client degrades browser responsiveness and consumes excessive memory. Furthermore, traditional SQL `OFFSET / LIMIT` pagination suffers from $O(N)$ scanning degradation and page drift when items are added or deleted between page requests.
 
-### Decision
-Use `pydantic-settings` with an explicit environment contract defined in `.env.example`.
+### Alternatives Considered
+1. **Unbounded List Fetching:** Fetching all items and filtering/paginating in React memory.
+   - *Why rejected:* Scales poorly, causes significant initial load latency, and exhausts mobile browser memory.
+2. **SQL `OFFSET / LIMIT`:** Standard page-number pagination (`OFFSET 25 LIMIT 25`).
+   - *Why rejected:* If a new item is created on page 1 while the operator views page 2, rows shift and items appear duplicated or skipped.
+3. **Transactional Outbox with Dedicated Background Worker:**
+   - *Status:* Evaluated and intentionally deferred for this iteration. Core requirements demand rock-solid synchronous transactional integrity, bounded keyset pagination, and zero external dependency failure modes. Adding background worker queues (Redis/Celery) introduces out-of-order delivery, poll latency, and connection bloat without delivering value required by the challenge.
 
-### Rationale
-- **Security:** `.env` is strictly gitignored. Real secrets and passwords are never checked into Git.
-- **Documentation:** `.env.example` serves as the authoritative, version-controlled template documenting all required variables across the stack.
-- **Flexible Hierarchy:** `Settings` searches `../.env` and `.env` while giving precedence to host OS or container environment variables.
+### Choice (Implemented & Tested)
+- **Keyset Cursor Pagination (`(created_at, id)`):**
+  Work item, activity, and comment lists use opaque base64-encoded keyset cursors. PostgreSQL executes cursor queries in $O(1)$ time via composite indexes:
+  ```sql
+  WHERE tuple(created_at, id) < tuple(:cursor_created_at, :cursor_id)
+  ORDER BY created_at DESC, id DESC
+  LIMIT 25;
+  ```
+- **Authoritative Server-Side Dashboard Metrics:**
+  Summary metrics (`unassigned_urgent`, `awaiting_approval`, `in_progress`, `assigned_to_me`, and total items) are computed via server-side SQL `COUNT(*)` aggregates across the entire team dataset, never calculated from loaded client pages.
+- **Bounded Detail Feeds:**
+  Comments and activity logs load in bounded pages (20 items) with dedicated "Load Older Comments" and "Load Older Events" actions.
+- **Search Debouncing & Request Sequence Guard:**
+  Filter changes and searches are debounced by 250ms and monitored by request sequence counters and `AbortController` cancellation, preventing stale in-flight responses from overwriting newer query states.
 
----
-
-## ADR 006: Frontend Stack & Dev Proxy
-
-### Context
-The frontend needs to be responsive, type-safe, and capable of communicating with the backend without CORS complications during local development.
-
-### Decision
-Use **React 19**, **TypeScript**, **Vite**, and **Tailwind CSS**, with a local development proxy configured in `vite.config.ts`.
-
-### Rationale
-- **Vite Proxy:** Forwarding `/api` and `/health` requests to `http://localhost:8000` eliminates browser CORS preflight friction during local development.
-- **TypeScript:** Shares request/response contract interfaces with backend Pydantic schemas.
-- **Tailwind CSS:** Enables rapid, design-system-consistent component styling without runtime CSS-in-JS overhead.
-
----
-
-## ADR 007: Concurrency & Conflict Resolution Strategy
-
-### Planned Approach for Core Features
-1. **Optimistic Concurrency Control (implemented):**
-   - Work items maintain a `version` integer column incremented on every state mutation.
-   - Updates verify `WHERE id = :id AND version = :current_version`. If zero rows are updated, an `HTTP 409 Conflict` is returned to prevent lost updates.
-2. **Atomic claim (implemented, supersedes the earlier `FOR UPDATE` plan):**
-   - Claiming is a single conditional `UPDATE ... WHERE assignee_id IS NULL AND status = 'open' RETURNING`. PostgreSQL's row lock serializes competing claims and the loser re-evaluates the predicate against the committed row, so no explicit `SELECT ... FOR UPDATE` is needed and there is no read-then-write window.
-
----
-
-## ADR 008: Authorization — one team-scoped policy, 404 for foreign resources
-
-Roles live on `memberships` (per team). `app/services/permissions.py` holds the whole matrix; endpoints and services call
-`require(action, role, ...)`. Items are loaded with a JOIN on the caller's membership, so another team's item is
-indistinguishable from a missing one (`404`), while insufficient role inside the team is `403`. Approval is Lead-only
-(Admin deliberately excluded). Dashboard views derive "who can approve" from the same policy.
-
-## ADR 009: Transaction boundaries and audit history
-
-Every mutation runs inside `async with transaction(session)`: validate -> compare-and-swap UPDATE -> stage activity
-events with `record_event` (never commits itself) -> commit. A failure anywhere rolls back the mutation, its events and
-the idempotency record together. Activity rows are append-only at the application level (read-only endpoint) and use
-`clock_timestamp()` so events from one transaction keep their order.
-
-## ADR 010: Idempotent creation via a unique index
-
-`idempotency_keys` has a unique `(user_id, endpoint, key)`. The creating transaction first runs `INSERT ... ON CONFLICT DO
-NOTHING RETURNING id`; a concurrent duplicate blocks on the index until the winner commits, then replays the stored
-response (or gets `409` if the payload hash differs). The response is written in the same transaction as the item.
-
-## ADR 011: Integrity enforced in the database too
-
-CHECK constraints for enums, version, title length, status/timestamp consistency and "started work has an assignee";
-a composite foreign key `(assignee_id, team_id) -> memberships(user_id, team_id)` makes "assignee belongs to the item's
-team" a database guarantee behind the service-level validation; e-mails are stored lower-case with a CHECK. Indexes match
-the real query shapes (keyset list by team/status, partial indexes for assigned, urgent-unassigned and awaiting-approval).
-
----
-
-## ADR 012: Server-Side Keyset Pagination, Filtering, and Dashboard Accuracy
-
-### Context
-Loading unbounded collections into the browser violates memory constraints and causes stale, truncated, or inaccurate metrics when client-side filtering and counting operate only on the initial loaded page.
-
-### Decision
-1. **Keyset Cursor Pagination (`next_cursor`):**
-   - The frontend requests a constrained page size (`limit=25`) and navigates through collections using `next_cursor`.
-   - Backward and forward navigation maintains a cursor stack, eliminating the performance degradation and offset drift of SQL `OFFSET`.
-2. **Server-Side Filtering & Search:**
-   - Status, priority, item type, and text search (`q`) are processed directly by PostgreSQL via index-backed `WHERE` and `ILIKE` clauses.
-3. **Database-Calculated Dashboard Metrics:**
-   - Dashboard summary metrics (`open`, `in_progress`, `urgent`, `awaiting_approval`, `assigned_to_me`, and total items) are computed via aggregate SQL queries (`func.count().filter(...)`) directly in PostgreSQL across the full dataset rather than derived from loaded page items.
-   - Dedicated views (`assigned_to_me`, `unassigned_urgent`, `awaiting_my_approval`) utilize the existing backend dashboard endpoints and preserve lead-only authorization rules.
-
+### Trade-offs
+- Keyset cursor pagination does not support jumping directly to an arbitrary page number (e.g. "Jump to page 12"); navigation is forward/backward via cursor stack.

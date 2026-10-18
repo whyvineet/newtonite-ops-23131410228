@@ -11,7 +11,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [teamName, setTeamName] = useState('Platform Ops')
-  const [role, setRole] = useState<'lead' | 'admin' | 'member' | 'viewer'>('lead')
   const [formError, setFormError] = useState<string | null>(null)
 
   const handleSwitchMode = (newMode: AuthMode) => {
@@ -42,8 +41,8 @@ export default function LoginScreen() {
         setFormError('Please enter both email and password.')
         return
       }
-      if (password.length < 6) {
-        setFormError('Password must be at least 6 characters long.')
+      if (password.length < 8) {
+        setFormError('Password must be at least 8 characters long.')
         return
       }
       if (!teamName.trim()) {
@@ -56,7 +55,6 @@ export default function LoginScreen() {
           email: email.trim(),
           password,
           team_name: teamName.trim(),
-          role,
         })
       } catch {
         // Error is set in AuthContext
@@ -194,23 +192,14 @@ export default function LoginScreen() {
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="auth-role" className={labelClass}>
-                    Role in Team
-                  </label>
-                  <select
-                    id="auth-role"
-                    value={role}
-                    onChange={(e) =>
-                      setRole(e.target.value as 'lead' | 'admin' | 'member' | 'viewer')
-                    }
-                    className={inputClass}
-                  >
-                    <option value="lead">Lead (Approval authority)</option>
-                    <option value="member">Member (Standard workflow)</option>
-                    <option value="admin">Admin (Full administrative)</option>
-                    <option value="viewer">Viewer (Read-only)</option>
-                  </select>
+                <div className="rounded border border-[#E2E1DC] bg-[#FAF9F7] p-2.5 text-xs text-[#63625D]">
+                  <div className="flex items-center gap-1.5 font-medium text-[#242520]">
+                    <span className="inline-block size-2 rounded-full bg-[#285E34]" />
+                    <span>Workspace Creator Role</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#63625D]">
+                    Creating a new team automatically designates you as the <strong>Lead</strong> with approval authority and administrative control over the workspace.
+                  </p>
                 </div>
               </>
             )}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listTeamMembers } from './api/teams'
 import { getDashboard, getDashboardSummary, listItems } from './api/workItems'
 import ActivityFeedView from './components/ActivityFeedView'
@@ -24,8 +24,18 @@ type OverviewFilter =
   | 'urgent'
 
 function DashboardApp() {
-  const { user, token, teams, currentTeam, roleInCurrentTeam, isLoading, logout } =
-    useAuth()
+  const {
+    user,
+    token,
+    teams,
+    currentTeam,
+    roleInCurrentTeam,
+    isLoading,
+    error: authError,
+    teamsError,
+    refreshUserData,
+    logout,
+  } = useAuth()
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('overview')
   const [members, setMembers] = useState<TeamMember[]>([])
@@ -40,6 +50,7 @@ function DashboardApp() {
 
   // Server-side filters
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all')
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<ItemType | 'all'>('all')
@@ -54,6 +65,19 @@ function DashboardApp() {
 
   const teamId = currentTeam?.id
   const currentUserId = user?.id
+
+  // Concurrency safeguards
+  const activeRequestIdRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Debounce search input by 250ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery)
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
 
   // Fetch summary counts and team members
   const fetchSummaryAndMembers = useCallback(async () => {
@@ -71,15 +95,24 @@ function DashboardApp() {
     }
   }, [teamId, token])
 
-  // Fetch current page of items for the active view and cursor
+  // Fetch current page of items with cancellation & race sequence guard
   const fetchItems = useCallback(
     async (cursor?: string) => {
       if (!teamId || !token) return
+
+      // Cancel previous request if still in flight
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      const requestId = ++activeRequestIdRef.current
+
       setIsLoadingData(true)
       setDataError(null)
 
       try {
-        const q = searchQuery.trim() || undefined
+        const q = debouncedSearch.trim() || undefined
         const p = priorityFilter !== 'all' ? priorityFilter : undefined
         const t = typeFilter !== 'all' ? typeFilter : undefined
 
@@ -88,19 +121,21 @@ function DashboardApp() {
 
         if (activeTab === 'overview') {
           if (overviewFilter === 'unassigned_urgent' && !q && priorityFilter === 'all' && typeFilter === 'all') {
-            const res = await getDashboard('unassigned_urgent', {
-              team_id: teamId,
-              cursor,
-              limit: 25,
-            })
+            const res = await getDashboard(
+              'unassigned_urgent',
+              { team_id: teamId, cursor, limit: 25 },
+              25,
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           } else if (overviewFilter === 'awaiting_approval' && !q && priorityFilter === 'all' && typeFilter === 'all') {
-            const res = await getDashboard('awaiting_my_approval', {
-              team_id: teamId,
-              cursor,
-              limit: 25,
-            })
+            const res = await getDashboard(
+              'awaiting_my_approval',
+              { team_id: teamId, cursor, limit: 25 },
+              25,
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           } else {
@@ -112,86 +147,114 @@ function DashboardApp() {
             else if (overviewFilter === 'awaiting_approval') s = 'awaiting_approval'
             else if (overviewFilter === 'urgent') priority = 'urgent'
 
-            const res = await listItems({
-              team_id: teamId,
-              status: s,
-              priority,
-              type: t,
-              q,
-              cursor,
-              limit: 25,
-            })
+            const res = await listItems(
+              {
+                team_id: teamId,
+                status: s,
+                priority,
+                type: t,
+                q,
+                cursor,
+                limit: 25,
+              },
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           }
         } else if (activeTab === 'work-items') {
           const s = statusFilter !== 'all' ? statusFilter : undefined
-          const res = await listItems({
-            team_id: teamId,
-            status: s,
-            priority: p,
-            type: t,
-            q,
-            cursor,
-            limit: 25,
-          })
-          pageItems = res.items
-          pageNextCursor = res.next_cursor
-        } else if (activeTab === 'my-work') {
-          if (!q && statusFilter === 'all' && priorityFilter === 'all' && typeFilter === 'all') {
-            const res = await getDashboard('assigned_to_me', {
+          const res = await listItems(
+            {
               team_id: teamId,
-              cursor,
-              limit: 25,
-            })
-            pageItems = res.items
-            pageNextCursor = res.next_cursor
-          } else {
-            const s = statusFilter !== 'all' ? statusFilter : undefined
-            const res = await listItems({
-              team_id: teamId,
-              assignee_id: currentUserId,
               status: s,
               priority: p,
               type: t,
               q,
               cursor,
               limit: 25,
-            })
+            },
+            controller.signal,
+          )
+          pageItems = res.items
+          pageNextCursor = res.next_cursor
+        } else if (activeTab === 'my-work') {
+          if (!q && statusFilter === 'all' && priorityFilter === 'all' && typeFilter === 'all') {
+            const res = await getDashboard(
+              'assigned_to_me',
+              { team_id: teamId, cursor, limit: 25 },
+              25,
+              controller.signal,
+            )
+            pageItems = res.items
+            pageNextCursor = res.next_cursor
+          } else {
+            const s = statusFilter !== 'all' ? statusFilter : undefined
+            const res = await listItems(
+              {
+                team_id: teamId,
+                assignee_id: currentUserId,
+                status: s,
+                priority: p,
+                type: t,
+                q,
+                cursor,
+                limit: 25,
+              },
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           }
         } else if (activeTab === 'approvals') {
           if (!q && statusFilter === 'all' && priorityFilter === 'all' && typeFilter === 'all') {
-            const res = await getDashboard('awaiting_my_approval', {
-              team_id: teamId,
-              cursor,
-              limit: 25,
-            })
+            const res = await getDashboard(
+              'awaiting_my_approval',
+              { team_id: teamId, cursor, limit: 25 },
+              25,
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           } else {
-            const res = await listItems({
-              team_id: teamId,
-              status: 'awaiting_approval',
-              priority: p,
-              type: t,
-              q,
-              cursor,
-              limit: 25,
-            })
+            const res = await listItems(
+              {
+                team_id: teamId,
+                status: 'awaiting_approval',
+                priority: p,
+                type: t,
+                q,
+                cursor,
+                limit: 25,
+              },
+              controller.signal,
+            )
             pageItems = res.items
             pageNextCursor = res.next_cursor
           }
         }
 
-        setItems(pageItems)
-        setNextCursor(pageNextCursor)
+        // Sequence check: apply only if this is still the newest request
+        if (requestId === activeRequestIdRef.current) {
+          setItems(pageItems)
+          setNextCursor(pageNextCursor)
+        }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to fetch work items'
-        setDataError(msg)
+        // Aborted requests should never be shown as user-facing errors
+        if (
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (err instanceof Error && err.name === 'AbortError')
+        ) {
+          return
+        }
+        if (requestId === activeRequestIdRef.current) {
+          const msg = err instanceof Error ? err.message : 'Failed to fetch work items'
+          setDataError(msg)
+        }
       } finally {
-        setIsLoadingData(false)
+        if (requestId === activeRequestIdRef.current) {
+          setIsLoadingData(false)
+        }
       }
     },
     [
@@ -199,7 +262,7 @@ function DashboardApp() {
       token,
       activeTab,
       overviewFilter,
-      searchQuery,
+      debouncedSearch,
       statusFilter,
       priorityFilter,
       typeFilter,
@@ -380,8 +443,78 @@ function DashboardApp() {
     )
   }
 
+  // Recoverable session error: token exists but backend unreachable
+  if (token && !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F7F7F5] p-4">
+        <div className="w-full max-w-md rounded-lg border border-[#E2E1DC] bg-white p-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+          <div className="mb-3 flex items-center justify-center">
+            <span className="font-mono text-sm font-bold px-2 py-0.5 rounded bg-[#B85D3B] text-white">
+              N°
+            </span>
+          </div>
+          <h2 className="text-sm font-semibold text-[#242520]">Backend Service Unavailable</h2>
+          <p className="mt-2 text-xs text-[#63625D] leading-normal">
+            {authError || 'Unable to connect to the Newtonite backend service. Your session is preserved.'}
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refreshUserData()}
+              className="inline-flex items-center rounded bg-[#B85D3B] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#9E4C2E] transition-colors"
+            >
+              Retry Connection
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              className="inline-flex items-center rounded border border-[#E2E1DC] bg-white px-3.5 py-1.5 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!user || !token) {
     return <LoginScreen />
+  }
+
+  // Recoverable team loading error: user is valid, but teams failed to load
+  if (teamsError && teams.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F7F7F5] p-4">
+        <div className="w-full max-w-md rounded-lg border border-[#E2E1DC] bg-white p-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+          <div className="mb-3 flex items-center justify-center">
+            <span className="font-mono text-sm font-bold px-2 py-0.5 rounded bg-[#242520] text-[#F7F7F5]">
+              N°
+            </span>
+          </div>
+          <h2 className="text-sm font-semibold text-[#242520]">Failed to Load Workspaces</h2>
+          <p className="mt-2 text-xs text-[#63625D] leading-normal">
+            Authenticated as <strong>{user.email}</strong>, but we encountered an error loading your teams: {teamsError}
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refreshUserData()}
+              className="inline-flex items-center rounded bg-[#242520] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-black transition-colors"
+            >
+              Retry Loading Teams
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              className="inline-flex items-center rounded border border-[#E2E1DC] bg-white px-3.5 py-1.5 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (teams.length === 0) {
@@ -770,10 +903,16 @@ function DashboardApp() {
   )
 }
 
+function AuthenticatedApp() {
+  const { currentTeam } = useAuth()
+  return <DashboardApp key={currentTeam?.id || 'none'} />
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <DashboardApp />
+      <AuthenticatedApp />
     </AuthProvider>
   )
 }
+

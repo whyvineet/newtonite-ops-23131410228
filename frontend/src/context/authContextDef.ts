@@ -10,6 +10,7 @@ export interface AuthContextType {
   roleInCurrentTeam: Role | null
   isLoading: boolean
   error: string | null
+  teamsError: string | null
   login: (email: string, password: string) => Promise<void>
   register: (payload: RegisterPayload) => Promise<void>
   logout: () => void

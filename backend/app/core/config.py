@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -29,6 +29,34 @@ class Settings(BaseSettings):
     environment: str
     # Non-secret tuning knob; safe default so existing .env files keep working.
     access_token_expire_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.environment.lower() == "production":
+            dev_examples = {
+                "insecure-dev-secret-key-change-in-production-32-bytes!",
+                "test-secret-key-at-least-32-bytes-long-for-testing",
+                "secret",
+                "changeme",
+                "development",
+            }
+            if (
+                self.secret_key in dev_examples
+                or "dev-secret" in self.secret_key.lower()
+                or "insecure" in self.secret_key.lower()
+            ):
+                raise ValueError(
+                    "Unsafe SECRET_KEY configuration: development secret cannot be used when ENVIRONMENT=production."
+                )
+            if len(self.secret_key) < 32:
+                raise ValueError(
+                    "Unsafe SECRET_KEY configuration: SECRET_KEY must be at least 32 characters in production."
+                )
+            if self.debug:
+                raise ValueError(
+                    "Unsafe configuration: DEBUG must be false when ENVIRONMENT=production."
+                )
+        return self
 
 
 @lru_cache

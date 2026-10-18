@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints
 
 from app.models.enums import Role
 
@@ -21,14 +21,11 @@ class RegisterRequest(BaseModel):
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
     ]
-    email: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)
-    ]
-    password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
+    email: EmailStr
+    password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
     team_name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
     ] = "Platform Ops"
-    role: Role = Role.LEAD
 
 
 class TokenResponse(BaseModel):

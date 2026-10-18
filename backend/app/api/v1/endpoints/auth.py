@@ -22,7 +22,6 @@ async def register(payload: RegisterRequest, session: DbSession) -> TokenRespons
         email=payload.email,
         password=payload.password,
         team_name=payload.team_name,
-        role=payload.role,
     )
     token, expires_in = create_access_token(user.id)
     return TokenResponse(access_token=token, expires_in=expires_in)
