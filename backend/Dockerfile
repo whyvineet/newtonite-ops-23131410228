@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Install uv from the official astral-sh binary image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /uvx /bin/
 
 WORKDIR /app
 

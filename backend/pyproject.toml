@@ -1,8 +1,7 @@
 [project]
-name = "backend"
+name = "operations-under-pressure-backend"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Backend API for Operations Under Pressure work-management system"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.20.0",
