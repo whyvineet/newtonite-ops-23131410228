@@ -34,6 +34,8 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
 
   frontend:
     build:
