@@ -27,4 +27,3 @@ class DashboardSummary(BaseModel):
     assigned_to_me: int
     unassigned_urgent: int
     total: int
-

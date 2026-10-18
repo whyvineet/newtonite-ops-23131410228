@@ -55,9 +55,8 @@ async def get_dashboard(
     limit: int,
     team_id: uuid.UUID | None = None,
 ) -> tuple[int, list[WorkItem], str | None]:
-    if team_id is not None:
-        if await get_team_role(session, user.id, team_id) is None:
-            raise NotFoundError("Team not found", code="team_not_found")
+    if team_id is not None and await get_team_role(session, user.id, team_id) is None:
+        raise NotFoundError("Team not found", code="team_not_found")
     conditions = _view_conditions(view, user.id, team_id=team_id)
     total = await session.scalar(
         select(func.count()).select_from(WorkItem).where(*conditions)
@@ -91,24 +90,34 @@ async def get_dashboard_summary(
         select(
             func.count().label("total"),
             func.count().filter(WorkItem.status == Status.OPEN.value).label("open"),
-            func.count().filter(WorkItem.status == Status.IN_PROGRESS.value).label("in_progress"),
-            func.count().filter(
+            func.count()
+            .filter(WorkItem.status == Status.IN_PROGRESS.value)
+            .label("in_progress"),
+            func.count()
+            .filter(
                 WorkItem.priority == Priority.URGENT.value,
                 WorkItem.status.notin_([Status.RESOLVED.value, Status.CLOSED.value]),
-            ).label("urgent"),
-            func.count().filter(
+            )
+            .label("urgent"),
+            func.count()
+            .filter(
                 WorkItem.status == Status.AWAITING_APPROVAL.value,
                 WorkItem.team_id.in_(approver_teams),
-            ).label("awaiting_approval"),
-            func.count().filter(
+            )
+            .label("awaiting_approval"),
+            func.count()
+            .filter(
                 WorkItem.assignee_id == user.id,
                 WorkItem.status != Status.CLOSED.value,
-            ).label("assigned_to_me"),
-            func.count().filter(
+            )
+            .label("assigned_to_me"),
+            func.count()
+            .filter(
                 WorkItem.assignee_id.is_(None),
                 WorkItem.priority == Priority.URGENT.value,
                 WorkItem.status != Status.CLOSED.value,
-            ).label("unassigned_urgent"),
+            )
+            .label("unassigned_urgent"),
         )
         .select_from(WorkItem)
         .where(team_scope)
@@ -123,4 +132,3 @@ async def get_dashboard_summary(
         assigned_to_me=row.assigned_to_me or 0,
         unassigned_urgent=row.unassigned_urgent or 0,
     )
-

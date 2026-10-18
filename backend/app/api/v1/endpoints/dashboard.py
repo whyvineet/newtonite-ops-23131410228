@@ -39,4 +39,3 @@ async def dashboard(
         next_cursor=next_cursor,
         limit=limit,
     )
-

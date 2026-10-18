@@ -119,7 +119,9 @@ async def test_dashboard_summary_and_team_scoping(
     )
     await world.make_item(title="urgent unassigned", priority="urgent", status="open")
     await world.make_item(
-        title="waiting approval", status="awaiting_approval", assignee_id=world.member.id
+        title="waiting approval",
+        status="awaiting_approval",
+        assignee_id=world.member.id,
     )
 
     # Lead can see awaiting approval
@@ -223,9 +225,8 @@ async def test_more_than_100_work_items_pagination_and_accuracy(
     in_prog_seen = set()
     cursor = None
     while True:
-        url = (
-            f"/api/v1/items?team_id={world.team_a.id}&status=in_progress&limit=25"
-            + (f"&cursor={cursor}" if cursor else "")
+        url = f"/api/v1/items?team_id={world.team_a.id}&status=in_progress&limit=25" + (
+            f"&cursor={cursor}" if cursor else ""
         )
         res = await async_client.get(url, headers=member_h)
         assert res.status_code == 200
@@ -268,9 +269,7 @@ async def test_more_than_100_work_items_pagination_and_accuracy(
     p2_items = my_work_p2.json()["items"]
     assert len(p2_items) == 25
     assert my_work_p2.json()["next_cursor"] is None
-    all_assigned_ids = {i["id"] for i in my_work["items"]} | {
-        i["id"] for i in p2_items
-    }
+    all_assigned_ids = {i["id"] for i in my_work["items"]} | {i["id"] for i in p2_items}
     assert len(all_assigned_ids) == 50
 
     # 6. Approvals (awaiting_my_approval) for Lead does not omit items
@@ -283,4 +282,3 @@ async def test_more_than_100_work_items_pagination_and_accuracy(
     assert approvals["total"] == 15
     assert len(approvals["items"]) == 10
     assert approvals["next_cursor"] is not None
-
