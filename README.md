@@ -38,16 +38,14 @@ Start all three container services (PostgreSQL, Backend, Frontend):
 docker compose up --build -d
 ```
 
-### 4. Initialize Database Schema and Demo Seed Data
+### 4. Initialize Database Schema
 > [!IMPORTANT]
-> The primary startup path requires running schema migrations and demo seeding explicitly:
+> The application requires running schema migrations explicitly on a fresh database:
 ```bash
 # Apply Alembic schema migrations
 docker compose exec backend uv run alembic upgrade head
-
-# Seed initial demonstration accounts, teams, and sample items
-docker compose exec backend uv run python -m app.seed
 ```
+*(Optional: If you wish to populate sample test data for local development, run `docker compose exec backend uv run python -m app.seed`)*
 
 ### 5. Access Points
 - **Frontend App:** [http://localhost:5173](http://localhost:5173)
@@ -83,8 +81,8 @@ uv sync
 # Run database migrations
 uv run alembic upgrade head
 
-# Seed idempotent local demo data (refuses to run when ENVIRONMENT=production)
-uv run python -m app.seed
+# (Optional) Seed initial development fixtures if desired
+# uv run python -m app.seed
 
 # Start development server with hot reload
 uv run uvicorn app.main:app --reload --port 8000
@@ -117,20 +115,32 @@ Public registration (`POST /api/v1/auth/register`) strictly follows the **new wo
 6. **Password Security:** Passwords require a minimum of 8 characters, are hashed using Argon2id, and password hashes are never exposed in responses or tokens.
 7. **Production Secret Enforcement:** If `ENVIRONMENT=production`, application startup fails fast if the default development example secret is detected or if `SECRET_KEY` is shorter than 32 characters.
 
-### Demo Accounts (LOCAL DEVELOPMENT ONLY)
+### Role Permissions & Authority Matrix
 
-Every seeded account uses the password **`demo-password-123`**. These credentials are local-only; the seeder refuses to execute when `ENVIRONMENT=production`.
+The platform enforces strict, team-scoped role-based access control (RBAC). A user's role is scoped per team:
 
-| Email | Platform Ops | Customer Support | Role Privileges |
-|---|---|---|---|
-| `alice.lead@demo.test` | Lead | - | Team Lead: full approval authority, assignments, transitions |
-| `bob.member@demo.test` | Member | - | Standard operator: can claim, execute work, submit for approval |
-| `carol.admin@demo.test` | Admin | - | Workspace admin: assignments, priority tuning (cannot approve) |
-| `dave.viewer@demo.test` | Viewer | - | Read-only observation: no edits, transitions, or comments |
-| `erin.lead@demo.test` | Member | Lead | Multi-tenant user: Member in Alpha, Lead in Beta |
-| `frank.member@demo.test` | - | Member | Single-tenant member |
-| `grace.admin@demo.test` | - | Admin | Single-tenant admin |
-| `henry.disabled@demo.test` | Disabled | - | Deactivated account: cannot log in or use tokens (401) |
+| Capability | Lead | Admin | Member | Viewer |
+|---|:---:|:---:|:---:|:---:|
+| **View items, feeds, and activity** | Yes | Yes | Yes | Yes |
+| **Create work items** | Yes | Yes | Yes | No |
+| **Claim open unassigned items** | Yes | Yes | Yes | No |
+| **Execute assigned work & submit for approval** | Yes | Yes | Assignee only | No |
+| **Edit basic fields & change priority** | Yes | Yes | Creator/Assignee only | No |
+| **Assign / reassign work items** | Yes | Yes | No | No |
+| **Close resolved items** | Yes | Yes | No | No |
+| **Approve items in `AWAITING_APPROVAL`** | **Yes** | **No** (Deliberate separation) | **No** | **No** |
+| **Manage team memberships** | No | **Yes** | No | No |
+| **Comment on work items** | Yes | Yes | Yes | No |
+
+> [!NOTE]
+> **Separation of Duties:** Admins manage operational configuration and memberships, but **only Team Leads** possess approval authority for work items awaiting sign-off.
+
+### Workspace Provisioning & Account Access
+
+The application operates on an authentic user-driven authentication model rather than hardcoded demo accounts:
+1. **First-time Onboarding:** Navigate to [http://localhost:5173](http://localhost:5173), switch to the Registration screen, and provide your name, email, password, and desired workspace name. Registration creates the new team and automatically grants you the **Lead** role.
+2. **Subsequent Sign-in:** Authenticate with your registered email and password via `POST /api/v1/auth/login`.
+3. **Optional Local Seed Fixtures:** For developers needing initial sample items or multi-role fixtures in an empty local database, an optional developer utility is available (`uv run python -m app.seed`). This script generates sample items across "Platform Ops" and "Customer Support" for manual testing, and is strictly blocked when `ENVIRONMENT=production`.
 
 ---
 
