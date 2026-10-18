@@ -4,7 +4,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getMe, login as apiLogin, DEMO_PASSWORD } from '../api/auth'
+import { getMe, login as apiLogin } from '../api/auth'
 import { getStoredToken, setStoredToken } from '../api/client'
 import { listMyTeams } from '../api/teams'
 import type { Role, Team, User } from '../types/api'
@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchUserAndTeams])
 
-  const login = async (email: string, password = DEMO_PASSWORD) => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true)
     setError(null)
     try {

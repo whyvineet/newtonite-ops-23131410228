@@ -9,7 +9,7 @@ export interface AuthContextType {
   roleInCurrentTeam: Role | null
   isLoading: boolean
   error: string | null
-  login: (email: string, password?: string) => Promise<void>
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
   setCurrentTeam: (team: Team) => void
   refreshUserData: () => Promise<void>

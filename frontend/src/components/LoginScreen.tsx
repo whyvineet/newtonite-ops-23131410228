@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../api/auth'
 import { useAuth } from '../context/useAuth'
 import BackendStatus from './BackendStatus'
 
@@ -20,17 +19,6 @@ export default function LoginScreen() {
       await login(email.trim(), password)
     } catch {
       // Error is set in AuthContext
-    }
-  }
-
-  const handleDemoLogin = async (demoEmail: string) => {
-    setEmail(demoEmail)
-    setPassword(DEMO_PASSWORD)
-    setFormError(null)
-    try {
-      await login(demoEmail, DEMO_PASSWORD)
-    } catch {
-      // Error handled
     }
   }
 
@@ -77,7 +65,7 @@ export default function LoginScreen() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. alice.lead@demo.test"
+              placeholder="name@example.com"
               className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-accent focus:outline-none"
             />
           </div>
@@ -108,38 +96,6 @@ export default function LoginScreen() {
             {isLoading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
-
-        <div className="pt-2">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 font-medium text-slate-600">
-                Or quick sign in as demo user
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {DEMO_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.email}
-                type="button"
-                onClick={() => handleDemoLogin(acc.email)}
-                disabled={isLoading}
-                className="flex flex-col items-start rounded-md border border-slate-200 bg-slate-50 p-2 text-left hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
-              >
-                <span className="text-xs font-semibold text-slate-900">
-                  {acc.name}
-                </span>
-                <span className="text-[11px] text-slate-600">
-                  {acc.roleDescription}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   )
