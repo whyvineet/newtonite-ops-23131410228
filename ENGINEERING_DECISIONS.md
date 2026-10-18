@@ -133,3 +133,21 @@ CHECK constraints for enums, version, title length, status/timestamp consistency
 a composite foreign key `(assignee_id, team_id) -> memberships(user_id, team_id)` makes "assignee belongs to the item's
 team" a database guarantee behind the service-level validation; e-mails are stored lower-case with a CHECK. Indexes match
 the real query shapes (keyset list by team/status, partial indexes for assigned, urgent-unassigned and awaiting-approval).
+
+---
+
+## ADR 012: Server-Side Keyset Pagination, Filtering, and Dashboard Accuracy
+
+### Context
+Loading unbounded collections into the browser violates memory constraints and causes stale, truncated, or inaccurate metrics when client-side filtering and counting operate only on the initial loaded page.
+
+### Decision
+1. **Keyset Cursor Pagination (`next_cursor`):**
+   - The frontend requests a constrained page size (`limit=25`) and navigates through collections using `next_cursor`.
+   - Backward and forward navigation maintains a cursor stack, eliminating the performance degradation and offset drift of SQL `OFFSET`.
+2. **Server-Side Filtering & Search:**
+   - Status, priority, item type, and text search (`q`) are processed directly by PostgreSQL via index-backed `WHERE` and `ILIKE` clauses.
+3. **Database-Calculated Dashboard Metrics:**
+   - Dashboard summary metrics (`open`, `in_progress`, `urgent`, `awaiting_approval`, `assigned_to_me`, and total items) are computed via aggregate SQL queries (`func.count().filter(...)`) directly in PostgreSQL across the full dataset rather than derived from loaded page items.
+   - Dedicated views (`assigned_to_me`, `unassigned_urgent`, `awaiting_my_approval`) utilize the existing backend dashboard endpoints and preserve lead-only authorization rules.
+

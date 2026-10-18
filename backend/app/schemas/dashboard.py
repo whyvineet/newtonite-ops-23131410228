@@ -17,3 +17,14 @@ class DashboardResponse(BaseModel):
     items: list[WorkItemRead]
     next_cursor: str | None
     limit: int
+
+
+class DashboardSummary(BaseModel):
+    open: int
+    in_progress: int
+    urgent: int
+    awaiting_approval: int
+    assigned_to_me: int
+    unassigned_urgent: int
+    total: int
+

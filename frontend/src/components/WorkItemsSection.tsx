@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   ALL_PRIORITIES,
   ALL_STATUSES,
@@ -26,6 +26,26 @@ interface WorkItemsSectionProps {
   onCreateItem?: () => void
   canCreate?: boolean
   currentUserId?: string
+
+  // Server-side filtering
+  searchQuery?: string
+  onSearchChange?: (q: string) => void
+  statusFilter?: Status | 'all'
+  onStatusChange?: (s: Status | 'all') => void
+  priorityFilter?: Priority | 'all'
+  onPriorityChange?: (p: Priority | 'all') => void
+  typeFilter?: ItemType | 'all'
+  onTypeChange?: (t: ItemType | 'all') => void
+  onClearFilters?: () => void
+  hideStatusFilter?: boolean
+
+  // Keyset pagination
+  hasNextPage?: boolean
+  hasPrevPage?: boolean
+  onNextPage?: () => void
+  onPrevPage?: () => void
+  pageIndex?: number
+  totalCount?: number
 }
 
 const controlClass =
@@ -43,37 +63,89 @@ export default function WorkItemsSection({
   onCreateItem,
   canCreate = false,
   currentUserId,
+  searchQuery,
+  onSearchChange,
+  statusFilter,
+  onStatusChange,
+  priorityFilter,
+  onPriorityChange,
+  typeFilter,
+  onTypeChange,
+  onClearFilters,
+  hideStatusFilter = false,
+  hasNextPage = false,
+  hasPrevPage = false,
+  onNextPage,
+  onPrevPage,
+  pageIndex = 0,
+  totalCount,
 }: WorkItemsSectionProps) {
-  const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<Status | 'all'>('all')
-  const [priority, setPriority] = useState<Priority | 'all'>('all')
-  const [type, setType] = useState<ItemType | 'all'>('all')
+  // If parent controls filters via props, use those; otherwise fall back to local state
+  const isServerFiltered = Boolean(onSearchChange || onStatusChange || onPriorityChange || onTypeChange)
 
-  const normalizedQuery = query.trim().toLowerCase()
-  const hasActiveFilters =
-    normalizedQuery !== '' || status !== 'all' || priority !== 'all' || type !== 'all'
+  const [localSearch, setLocalSearch] = useState(searchQuery ?? '')
+  const [internalStatus, setInternalStatus] = useState<Status | 'all'>('all')
+  const [internalPriority, setInternalPriority] = useState<Priority | 'all'>('all')
+  const [internalType, setInternalType] = useState<ItemType | 'all'>('all')
 
+  const effectiveStatus = isServerFiltered ? (statusFilter ?? 'all') : internalStatus
+  const effectivePriority = isServerFiltered ? (priorityFilter ?? 'all') : internalPriority
+  const effectiveType = isServerFiltered ? (typeFilter ?? 'all') : internalType
+
+  const [prevSearchQuery, setPrevSearchQuery] = useState(searchQuery)
+  if (searchQuery !== prevSearchQuery) {
+    setPrevSearchQuery(searchQuery)
+    setLocalSearch(searchQuery ?? '')
+  }
+
+  // Debounce external search trigger to avoid excessive API requests
+  useEffect(() => {
+    if (!onSearchChange) return
+    const timer = setTimeout(() => {
+      onSearchChange(localSearch)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [localSearch, onSearchChange])
+
+  const hasActiveFilters = Boolean(
+    localSearch.trim() !== '' ||
+      (effectiveStatus !== 'all' && !hideStatusFilter) ||
+      effectivePriority !== 'all' ||
+      effectiveType !== 'all',
+  )
+
+  function handleClear() {
+    setLocalSearch('')
+    if (onClearFilters) {
+      onClearFilters()
+    } else {
+      setInternalStatus('all')
+      setInternalPriority('all')
+      setInternalType('all')
+    }
+  }
+
+  // Client-side fallback filtering when server filter callbacks are not provided
   const visibleItems = useMemo(() => {
+    if (isServerFiltered) return items
+    const query = localSearch.trim().toLowerCase()
     return items.filter((item) => {
-      if (status !== 'all' && item.status !== status) return false
-      if (priority !== 'all' && item.priority !== priority) return false
-      if (type !== 'all' && item.type !== type) return false
-      if (normalizedQuery === '') return true
+      if (effectiveStatus !== 'all' && item.status !== effectiveStatus) return false
+      if (effectivePriority !== 'all' && item.priority !== effectivePriority) return false
+      if (effectiveType !== 'all' && item.type !== effectiveType) return false
+      if (query === '') return true
 
       const assigneeName = item.assignee_id ? members[item.assignee_id]?.name ?? '' : 'unassigned'
       return [item.id, item.title, item.description, item.type, assigneeName]
         .join(' ')
         .toLowerCase()
-        .includes(normalizedQuery)
+        .includes(query)
     })
-  }, [items, status, priority, type, normalizedQuery, members])
+  }, [isServerFiltered, items, localSearch, effectiveStatus, effectivePriority, effectiveType, members])
 
-  function clearFilters() {
-    setQuery('')
-    setStatus('all')
-    setPriority('all')
-    setType('all')
-  }
+  const showPagination = Boolean(
+    hasPrevPage || hasNextPage || (pageIndex !== undefined && pageIndex > 0),
+  )
 
   return (
     <section
@@ -97,7 +169,11 @@ export default function WorkItemsSection({
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-accent-strong focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 <svg className="size-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                  <path
+                    fillRule="evenodd"
+                    d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                    clipRule="evenodd"
+                  />
                 </svg>
                 New Work Item
               </button>
@@ -105,23 +181,28 @@ export default function WorkItemsSection({
           </div>
         </div>
 
-          <div className="flex flex-wrap items-end gap-3 pt-1">
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium text-slate-700 sm:max-w-xs">
-              Search
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Title, ID, assignee…"
-                className={controlClass}
-              />
-            </label>
+        <div className="flex flex-wrap items-end gap-3 pt-1">
+          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium text-slate-700 sm:max-w-xs">
+            Search
+            <input
+              type="search"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="Title, description…"
+              className={controlClass}
+            />
+          </label>
 
+          {!hideStatusFilter && (
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
               Status
               <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value as Status | 'all')}
+                value={effectiveStatus}
+                onChange={(e) => {
+                  const val = e.target.value as Status | 'all'
+                  if (onStatusChange) onStatusChange(val)
+                  else setInternalStatus(val)
+                }}
                 className={controlClass}
               >
                 <option value="all">All statuses</option>
@@ -132,54 +213,65 @@ export default function WorkItemsSection({
                 ))}
               </select>
             </label>
+          )}
 
-            <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
-              Priority
-              <select
-                value={priority}
-                onChange={(event) => setPriority(event.target.value as Priority | 'all')}
-                className={controlClass}
-              >
-                <option value="all">All priorities</option>
-                {ALL_PRIORITIES.map((option) => (
-                  <option key={option} value={option}>
-                    {PRIORITY_LABELS[option]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
-              Type
-              <select
-                value={type}
-                onChange={(event) => setType(event.target.value as ItemType | 'all')}
-                className={controlClass}
-              >
-                <option value="all">All types</option>
-                {ALL_TYPES.map((option) => (
-                  <option key={option} value={option}>
-                    {TYPE_LABELS[option]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="button"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:border-slate-200 disabled:hover:bg-white"
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+            Priority
+            <select
+              value={effectivePriority}
+              onChange={(e) => {
+                const val = e.target.value as Priority | 'all'
+                if (onPriorityChange) onPriorityChange(val)
+                else setInternalPriority(val)
+              }}
+              className={controlClass}
             >
-              Clear
-            </button>
-          </div>
+              <option value="all">All priorities</option>
+              {ALL_PRIORITIES.map((option) => (
+                <option key={option} value={option}>
+                  {PRIORITY_LABELS[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+            Type
+            <select
+              value={effectiveType}
+              onChange={(e) => {
+                const val = e.target.value as ItemType | 'all'
+                if (onTypeChange) onTypeChange(val)
+                else setInternalType(val)
+              }}
+              className={controlClass}
+            >
+              <option value="all">All types</option>
+              {ALL_TYPES.map((option) => (
+                <option key={option} value={option}>
+                  {TYPE_LABELS[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={!hasActiveFilters}
+            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:border-slate-200 disabled:hover:bg-white"
+          >
+            Clear
+          </button>
+        </div>
 
         <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
           <p aria-live="polite">
             {isLoading
               ? 'Fetching records from server…'
-              : `Showing ${visibleItems.length} of ${items.length} items`}
+              : totalCount !== undefined
+              ? `Page ${pageIndex + 1} (${visibleItems.length} items) · ${totalCount} total matching records`
+              : `Page ${pageIndex + 1} (${visibleItems.length} items)`}
           </p>
         </div>
       </div>
@@ -193,7 +285,11 @@ export default function WorkItemsSection({
         <div className="px-4 py-12 text-center">
           <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-red-100 text-red-600">
             <svg className="size-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
             </svg>
           </div>
           <p className="mt-2 text-sm font-semibold text-slate-900">Failed to load work items</p>
@@ -208,45 +304,80 @@ export default function WorkItemsSection({
             </button>
           )}
         </div>
-      ) : items.length === 0 ? (
-        <div className="px-4 py-14 text-center">
-          <p className="text-sm font-medium text-slate-900">No work items found</p>
-          <p className="mt-1 text-xs text-slate-500">
-            There are currently no items in this operational queue.
-          </p>
-          {canCreate && onCreateItem && (
-            <button
-              type="button"
-              onClick={onCreateItem}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-strong"
-            >
-              Create first work item
-            </button>
-          )}
-        </div>
       ) : visibleItems.length === 0 ? (
         <div className="px-4 py-14 text-center">
-          <p className="text-sm font-medium text-slate-900">
-            No work items match your search and filters
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Try adjusting your search criteria or resetting filters.
-          </p>
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="mt-4 inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-          >
-            Clear filters
-          </button>
+          {hasActiveFilters ? (
+            <>
+              <p className="text-sm font-medium text-slate-900">
+                No work items match your search and filters
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Try adjusting your search criteria or resetting filters.
+              </p>
+              <button
+                type="button"
+                onClick={handleClear}
+                className="mt-4 inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                Clear filters
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-slate-900">No work items found</p>
+              <p className="mt-1 text-xs text-slate-500">
+                There are currently no items in this operational queue.
+              </p>
+              {canCreate && onCreateItem && (
+                <button
+                  type="button"
+                  onClick={onCreateItem}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-strong"
+                >
+                  Create first work item
+                </button>
+              )}
+            </>
+          )}
         </div>
       ) : (
-        <WorkItemsTable
-          items={visibleItems}
-          members={members}
-          onSelectItem={onSelectItem}
-          currentUserId={currentUserId}
-        />
+        <>
+          <WorkItemsTable
+            items={visibleItems}
+            members={members}
+            onSelectItem={onSelectItem}
+            currentUserId={currentUserId}
+          />
+
+          {showPagination && (
+            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-4 py-3 sm:px-6">
+              <div className="text-xs text-slate-500">
+                Page <span className="font-semibold text-slate-700">{pageIndex + 1}</span>
+                {totalCount !== undefined && (
+                  <span> &middot; {totalCount} total matching records</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onPrevPage}
+                  disabled={!hasPrevPage || isLoading}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  &larr; Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={onNextPage}
+                  disabled={!hasNextPage || isLoading}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next &rarr;
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </section>
   )

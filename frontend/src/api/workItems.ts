@@ -5,6 +5,7 @@ import type {
   Comment,
   CommentPage,
   DashboardResponse,
+  DashboardSummary,
   DashboardView,
   ItemType,
   Priority,
@@ -31,6 +32,7 @@ export async function listItems(
   filters: ItemListFilters = {},
   signal?: AbortSignal,
 ): Promise<WorkItemPage> {
+  const query = filters.q?.trim()
   return request<WorkItemPage>('/items', {
     method: 'GET',
     params: {
@@ -39,7 +41,7 @@ export async function listItems(
       priority: filters.priority,
       assignee_id: filters.assignee_id,
       type: filters.type,
-      q: filters.q,
+      q: query ? query : undefined,
       cursor: filters.cursor,
       limit: filters.limit,
     },
@@ -134,20 +136,53 @@ export async function listActivity(
   })
 }
 
+export interface DashboardOptions {
+  cursor?: string
+  limit?: number
+  team_id?: string
+}
+
 export async function getDashboard(
   view: DashboardView,
-  cursor?: string,
+  optionsOrCursor?: string | DashboardOptions,
   limit: number = 25,
   signal?: AbortSignal,
 ): Promise<DashboardResponse> {
+  let cursor: string | undefined
+  let lim = limit
+  let team_id: string | undefined
+
+  if (typeof optionsOrCursor === 'string') {
+    cursor = optionsOrCursor
+  } else if (optionsOrCursor) {
+    cursor = optionsOrCursor.cursor
+    lim = optionsOrCursor.limit ?? lim
+    team_id = optionsOrCursor.team_id
+  }
+
   return request<DashboardResponse>('/dashboard', {
     method: 'GET',
     params: {
       view,
       cursor,
-      limit,
+      limit: lim,
+      team_id,
     },
     signal,
   })
 }
+
+export async function getDashboardSummary(
+  team_id?: string,
+  signal?: AbortSignal,
+): Promise<DashboardSummary> {
+  return request<DashboardSummary>('/dashboard/summary', {
+    method: 'GET',
+    params: {
+      team_id,
+    },
+    signal,
+  })
+}
+
 

@@ -150,6 +150,17 @@ export interface DashboardResponse {
   limit: number
 }
 
+export interface DashboardSummary {
+  open: number
+  in_progress: number
+  urgent: number
+  awaiting_approval: number
+  assigned_to_me: number
+  unassigned_urgent: number
+  total: number
+}
+
+
 export interface ApiErrorDetail {
   code: string
   message: string
