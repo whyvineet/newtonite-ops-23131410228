@@ -99,8 +99,37 @@ Use **React 19**, **TypeScript**, **Vite**, and **Tailwind CSS**, with a local d
 ## ADR 007: Concurrency & Conflict Resolution Strategy
 
 ### Planned Approach for Core Features
-1. **Optimistic Concurrency Control:**
-   - Work items will maintain a `version` integer column incremented on every state mutation.
+1. **Optimistic Concurrency Control (implemented):**
+   - Work items maintain a `version` integer column incremented on every state mutation.
    - Updates verify `WHERE id = :id AND version = :current_version`. If zero rows are updated, an `HTTP 409 Conflict` is returned to prevent lost updates.
-2. **Pessimistic Locking for Atomic Transitions:**
-   - Critical reassignment operations will acquire a row lock using `SELECT ... FOR UPDATE` within a transaction boundary to prevent duplicate claiming.
+2. **Atomic claim (implemented, supersedes the earlier `FOR UPDATE` plan):**
+   - Claiming is a single conditional `UPDATE ... WHERE assignee_id IS NULL AND status = 'open' RETURNING`. PostgreSQL's row lock serializes competing claims and the loser re-evaluates the predicate against the committed row, so no explicit `SELECT ... FOR UPDATE` is needed and there is no read-then-write window.
+
+---
+
+## ADR 008: Authorization — one team-scoped policy, 404 for foreign resources
+
+Roles live on `memberships` (per team). `app/services/permissions.py` holds the whole matrix; endpoints and services call
+`require(action, role, ...)`. Items are loaded with a JOIN on the caller's membership, so another team's item is
+indistinguishable from a missing one (`404`), while insufficient role inside the team is `403`. Approval is Lead-only
+(Admin deliberately excluded). Dashboard views derive "who can approve" from the same policy.
+
+## ADR 009: Transaction boundaries and audit history
+
+Every mutation runs inside `async with transaction(session)`: validate -> compare-and-swap UPDATE -> stage activity
+events with `record_event` (never commits itself) -> commit. A failure anywhere rolls back the mutation, its events and
+the idempotency record together. Activity rows are append-only at the application level (read-only endpoint) and use
+`clock_timestamp()` so events from one transaction keep their order.
+
+## ADR 010: Idempotent creation via a unique index
+
+`idempotency_keys` has a unique `(user_id, endpoint, key)`. The creating transaction first runs `INSERT ... ON CONFLICT DO
+NOTHING RETURNING id`; a concurrent duplicate blocks on the index until the winner commits, then replays the stored
+response (or gets `409` if the payload hash differs). The response is written in the same transaction as the item.
+
+## ADR 011: Integrity enforced in the database too
+
+CHECK constraints for enums, version, title length, status/timestamp consistency and "started work has an assignee";
+a composite foreign key `(assignee_id, team_id) -> memberships(user_id, team_id)` makes "assignee belongs to the item's
+team" a database guarantee behind the service-level validation; e-mails are stored lower-case with a CHECK. Indexes match
+the real query shapes (keyset list by team/status, partial indexes for assigned, urgent-unassigned and awaiting-approval).
