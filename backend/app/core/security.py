@@ -14,6 +14,7 @@ JWT_ALGORITHM = "HS256"
 
 _hasher = PasswordHasher()
 
+
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
