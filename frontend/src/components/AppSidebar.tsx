@@ -12,21 +12,11 @@ interface AppSidebarProps {
 
 function ProductMark() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 32 32"
-      className="size-8 shrink-0"
-      focusable="false"
-    >
-      <rect width="32" height="32" rx="7" className="fill-accent" />
-      <path
-        d="M9 22V15M16 22V10M23 22v-5"
-        className="stroke-white"
-        strokeWidth="3"
-        strokeLinecap="round"
-        fill="none"
-      />
-    </svg>
+    <img
+      src="/logo.webp"
+      alt="Newtonite logo"
+      className="size-8 shrink-0 rounded-lg object-contain shadow-xs ring-1 ring-slate-900/10"
+    />
   )
 }
 

@@ -38,18 +38,11 @@ export default function LoginScreen() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="flex flex-col items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-accent text-white shadow-sm">
-            <svg
-              viewBox="0 0 32 32"
-              className="size-7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <rect width="32" height="32" rx="7" fill="none" />
-              <path d="M9 22V15M16 22V10M23 22v-5" strokeLinecap="round" />
-            </svg>
-          </div>
+          <img
+            src="/logo.webp"
+            alt="Newtonite logo"
+            className="size-16 rounded-2xl object-contain shadow-md ring-1 ring-slate-900/10"
+          />
           <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
             Operations Under Pressure
           </h1>

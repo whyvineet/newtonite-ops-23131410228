@@ -182,9 +182,15 @@ function DashboardApp() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="inline-block size-8 animate-spin rounded-full border-3 border-slate-300 border-t-accent" />
-          <p className="mt-3 text-sm font-medium text-slate-700">
+        <div className="flex flex-col items-center text-center">
+          <div className="relative mb-3 flex items-center justify-center">
+            <img
+              src="/logo.webp"
+              alt="Newtonite logo"
+              className="size-14 rounded-2xl object-contain shadow-md ring-1 ring-slate-900/10 animate-pulse"
+            />
+          </div>
+          <p className="text-sm font-medium text-slate-700">
             Initializing Newtonite session…
           </p>
         </div>
@@ -200,6 +206,11 @@ function DashboardApp() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-md">
+          <img
+            src="/logo.webp"
+            alt="Newtonite logo"
+            className="mx-auto size-12 rounded-xl object-contain shadow-sm mb-4 ring-1 ring-slate-900/10"
+          />
           <h2 className="text-lg font-semibold text-slate-900">
             No Team Memberships
           </h2>
