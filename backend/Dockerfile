@@ -20,6 +20,10 @@ COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./
 
+# Place virtualenv executables at the front of PATH to avoid runtime uv sync
+ENV PATH="/app/.venv/bin:$PATH"
+ENV UV_NO_SYNC=1
+
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
