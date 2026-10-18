@@ -1,18 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #4338ca;
-  --color-accent-strong: #3730a3;
-  --color-accent-soft: #eef2ff;
+  --color-paper: #F7F7F5;
+  --color-surface: #FFFFFF;
+  --color-ink: #242520;
+  --color-ink-muted: #63625D;
+  --color-border-subtle: #EAE9E4;
+  --color-border-strong: #D5D4CE;
+  --color-accent: #B85D3B;
+  --color-accent-strong: #9E4C2E;
+  --color-accent-soft: #FBF0EA;
+  --color-accent-muted: #E8C8BC;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
 @layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    background-color: #F7F7F5;
+    color: #242520;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    background-color: #F7F7F5;
+    color: #242520;
+    font-family: var(--font-sans);
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid #B85D3B;
     outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  .subtle-border {
+    border-color: #E2E1DC;
+  }
+
+  .paper-surface {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E1DC;
   }
 }

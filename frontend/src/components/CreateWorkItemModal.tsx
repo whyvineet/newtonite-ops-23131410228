@@ -71,22 +71,32 @@ export default function CreateWorkItemModal({
     (m) => m.is_active && m.role !== 'viewer',
   )
 
+  const inputClass =
+    'mt-1 block w-full rounded border border-[#E2E1DC] bg-white px-2.5 py-1.5 text-xs text-[#242520] placeholder:text-[#9C9A93] hover:border-[#D5D4CE] focus:outline-none focus:ring-1 focus:ring-[#B85D3B] focus:border-[#B85D3B] transition-colors'
+
+  const labelClass = 'block text-[11px] font-semibold uppercase tracking-wider text-[#63625D]'
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6"
     >
-      <div className="relative w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <h2 id="create-modal-title" className="text-base font-semibold text-slate-900">
-            Create New Work Item
-          </h2>
+      <div className="relative w-full max-w-lg rounded-lg border border-[#E2E1DC] bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between border-b border-[#EAE9E4] pb-3">
+          <div>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[#8E8D87]">
+              Operations &middot; Entry
+            </span>
+            <h2 id="create-modal-title" className="text-sm font-semibold text-[#242520] mt-0.5">
+              Create Work Item
+            </h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded p-1 text-[#63625D] hover:bg-[#F7F7F5] hover:text-[#242520] transition-colors"
             aria-label="Close dialog"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
@@ -98,16 +108,16 @@ export default function CreateWorkItemModal({
         {error && (
           <div
             role="alert"
-            className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+            className="mt-3 rounded border border-[#F1B8B3] bg-[#FDF0EE] p-2.5 text-xs text-[#A6261E]"
           >
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
           <div>
-            <label htmlFor="create-title" className="block text-xs font-semibold text-slate-700">
-              Title <span className="text-red-500">*</span>
+            <label htmlFor="create-title" className={labelClass}>
+              Title <span className="text-[#B85D3B]">*</span>
             </label>
             <input
               id="create-title"
@@ -116,36 +126,35 @@ export default function CreateWorkItemModal({
               maxLength={200}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Summary of the work item"
-              className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-accent focus:outline-none"
+              placeholder="Operational incident or ticket title…"
+              className={inputClass}
             />
           </div>
 
           <div>
-            <label htmlFor="create-description" className="block text-xs font-semibold text-slate-700">
+            <label htmlFor="create-description" className={labelClass}>
               Description
             </label>
             <textarea
               id="create-description"
               rows={3}
-              maxLength={10000}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Detailed description, reproduction steps, or context"
-              className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-accent focus:outline-none"
+              placeholder="Describe the context, severity, and reproduction steps…"
+              className={inputClass}
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="create-type" className="block text-xs font-semibold text-slate-700">
+              <label htmlFor="create-type" className={labelClass}>
                 Type
               </label>
               <select
                 id="create-type"
                 value={type}
                 onChange={(e) => setType(e.target.value as ItemType)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               >
                 {ALL_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -156,14 +165,14 @@ export default function CreateWorkItemModal({
             </div>
 
             <div>
-              <label htmlFor="create-priority" className="block text-xs font-semibold text-slate-700">
+              <label htmlFor="create-priority" className={labelClass}>
                 Priority
               </label>
               <select
                 id="create-priority"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as Priority)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               >
                 {ALL_PRIORITIES.map((p) => (
                   <option key={p} value={p}>
@@ -174,53 +183,53 @@ export default function CreateWorkItemModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="create-assignee" className="block text-xs font-semibold text-slate-700">
-                Initial Assignee
+              <label htmlFor="create-assignee" className={labelClass}>
+                Assignee
               </label>
               <select
                 id="create-assignee"
                 value={assigneeId}
                 onChange={(e) => setAssigneeId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               >
-                <option value="">Unassigned</option>
-                {assignableMembers.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    {m.name} ({m.role})
+                <option value="">Unassigned (Open queue)</option>
+                {assignableMembers.map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {member.name} ({member.role})
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label htmlFor="create-due-date" className="block text-xs font-semibold text-slate-700">
+              <label htmlFor="create-due" className={labelClass}>
                 Due Date
               </label>
               <input
-                id="create-due-date"
+                id="create-due"
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               />
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="flex justify-end gap-2 pt-3 border-t border-[#EAE9E4]">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded border border-[#E2E1DC] bg-white px-3 py-1.5 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-accent-strong disabled:opacity-50"
+              className="rounded bg-[#B85D3B] px-3.5 py-1.5 text-xs font-medium text-white hover:bg-[#9E4C2E] disabled:opacity-50 transition-colors"
             >
               {isSubmitting ? 'Creating…' : 'Create Item'}
             </button>

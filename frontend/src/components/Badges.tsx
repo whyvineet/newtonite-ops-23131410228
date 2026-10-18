@@ -10,58 +10,79 @@ import {
 } from '../types/api'
 
 const base =
-  'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium'
+  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-wide transition-colors'
 
 const statusStyles: Record<Status, string> = {
-  open: 'border-slate-300 bg-white text-slate-700',
-  in_progress: 'border-indigo-200 bg-indigo-50 text-indigo-800',
-  awaiting_approval: 'border-amber-300 bg-amber-50 text-amber-900',
-  resolved: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  closed: 'border-slate-200 bg-slate-100 text-slate-600',
+  open: 'border-[#D5D4CE] bg-[#F7F7F5] text-[#4A4944]',
+  in_progress: 'border-[#E8C8BC] bg-[#FBF0EA] text-[#9E4C2E] font-medium',
+  awaiting_approval: 'border-[#E6D4A5] bg-[#FDF8EB] text-[#855D10] font-medium',
+  resolved: 'border-[#C5DDC9] bg-[#F2F8F3] text-[#285E34]',
+  closed: 'border-[#DDDCD7] bg-[#EBEAE5] text-[#696863]',
+}
+
+const statusDots: Record<Status, string> = {
+  open: 'bg-[#9C9A93]',
+  in_progress: 'bg-[#B85D3B]',
+  awaiting_approval: 'bg-[#B48424]',
+  resolved: 'bg-[#2E7D43]',
+  closed: 'bg-[#8E8D87]',
 }
 
 const priorityStyles: Record<Priority, string> = {
-  low: 'border-slate-200 bg-slate-50 text-slate-600',
-  normal: 'border-slate-300 bg-white text-slate-700',
-  high: 'border-orange-300 bg-orange-50 text-orange-900',
-  urgent: 'border-red-300 bg-red-50 text-red-800',
+  low: 'border-[#E8E7E3] bg-[#F7F7F5] text-[#7A7873]',
+  normal: 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]',
+  high: 'border-[#F6D0AA] bg-[#FDF6ED] text-[#A05208] font-medium',
+  urgent: 'border-[#F1B8B3] bg-[#FDF0EE] text-[#A6261E] font-semibold',
 }
 
 const typeStyles: Record<ItemType, string> = {
-  incident: 'border-red-200 bg-red-50 text-red-700',
-  customer_issue: 'border-blue-200 bg-blue-50 text-blue-700',
-  payment: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  compliance: 'border-purple-200 bg-purple-50 text-purple-700',
-  task: 'border-slate-200 bg-slate-50 text-slate-700',
+  incident: 'border-[#F1B8B3] bg-[#FDF0EE] text-[#A6261E]',
+  customer_issue: 'border-[#CFDDF5] bg-[#F3F7FD] text-[#2452A1]',
+  payment: 'border-[#CDE5DB] bg-[#F0F8F5] text-[#1E684B]',
+  compliance: 'border-[#DFD3ED] bg-[#F7F3FB] text-[#5A318F]',
+  task: 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]',
 }
 
 const roleStyles: Record<Role, string> = {
-  viewer: 'border-slate-200 bg-slate-100 text-slate-600',
-  member: 'border-blue-200 bg-blue-50 text-blue-800',
-  lead: 'border-indigo-200 bg-indigo-50 text-indigo-800 font-semibold',
-  admin: 'border-purple-200 bg-purple-50 text-purple-800 font-semibold',
+  viewer: 'border-[#E2E1DC] bg-[#F7F7F5] text-[#63625D]',
+  member: 'border-[#CFDDF5] bg-[#F3F7FD] text-[#2452A1]',
+  lead: 'border-[#E8C8BC] bg-[#FBF0EA] text-[#9E4C2E] font-semibold',
+  admin: 'border-[#DFD3ED] bg-[#F7F3FB] text-[#5A318F] font-semibold',
 }
 
 export function StatusBadge({ status }: { status: Status }) {
-  const style = statusStyles[status] || 'border-slate-200 bg-white text-slate-700'
+  const style = statusStyles[status] || 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]'
+  const dot = statusDots[status] || 'bg-[#9C9A93]'
   const label = STATUS_LABELS[status] || status
-  return <span className={`${base} ${style}`}>{label}</span>
+  return (
+    <span className={`${base} ${style}`}>
+      <span className={`size-1.5 rounded-full ${dot} shrink-0`} aria-hidden="true" />
+      {label}
+    </span>
+  )
 }
 
 export function PriorityBadge({ priority }: { priority: Priority }) {
-  const style = priorityStyles[priority] || 'border-slate-200 bg-white text-slate-700'
+  const style = priorityStyles[priority] || 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]'
   const label = PRIORITY_LABELS[priority] || priority
-  return <span className={`${base} ${style}`}>{label}</span>
+  return (
+    <span className={`${base} ${style}`}>
+      {priority === 'urgent' && (
+        <span className="size-1.5 rounded-full bg-[#A6261E] shrink-0 animate-pulse" aria-hidden="true" />
+      )}
+      {label}
+    </span>
+  )
 }
 
 export function TypeBadge({ type }: { type: ItemType }) {
-  const style = typeStyles[type] || 'border-slate-200 bg-white text-slate-700'
+  const style = typeStyles[type] || 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]'
   const label = TYPE_LABELS[type] || type
   return <span className={`${base} ${style}`}>{label}</span>
 }
 
 export function RoleBadge({ role }: { role: Role }) {
-  const style = roleStyles[role] || 'border-slate-200 bg-white text-slate-700'
+  const style = roleStyles[role] || 'border-[#E2E1DC] bg-[#FFFFFF] text-[#4A4944]'
   const label = ROLE_LABELS[role] || role
   return <span className={`${base} ${style}`}>{label}</span>
 }

@@ -49,7 +49,7 @@ interface WorkItemsSectionProps {
 }
 
 const controlClass =
-  'h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent'
+  'h-8 rounded border border-[#E2E1DC] bg-white px-2.5 text-xs text-[#242520] placeholder:text-[#9C9A93] hover:border-[#D5D4CE] focus:outline-none focus:ring-1 focus:ring-[#B85D3B] focus:border-[#B85D3B] transition-colors'
 
 export default function WorkItemsSection({
   title = 'Work Items',
@@ -80,7 +80,6 @@ export default function WorkItemsSection({
   pageIndex = 0,
   totalCount,
 }: WorkItemsSectionProps) {
-  // If parent controls filters via props, use those; otherwise fall back to local state
   const isServerFiltered = Boolean(onSearchChange || onStatusChange || onPriorityChange || onTypeChange)
 
   const [localSearch, setLocalSearch] = useState(searchQuery ?? '')
@@ -98,12 +97,12 @@ export default function WorkItemsSection({
     setLocalSearch(searchQuery ?? '')
   }
 
-  // Debounce external search trigger to avoid excessive API requests
+  // Debounce search trigger
   useEffect(() => {
     if (!onSearchChange) return
     const timer = setTimeout(() => {
       onSearchChange(localSearch)
-    }, 300)
+    }, 280)
     return () => clearTimeout(timer)
   }, [localSearch, onSearchChange])
 
@@ -125,7 +124,7 @@ export default function WorkItemsSection({
     }
   }
 
-  // Client-side fallback filtering when server filter callbacks are not provided
+  // Client-side fallback filtering
   const visibleItems = useMemo(() => {
     if (isServerFiltered) return items
     const query = localSearch.trim().toLowerCase()
@@ -150,15 +149,16 @@ export default function WorkItemsSection({
   return (
     <section
       aria-labelledby="work-items-heading"
-      className="rounded-lg border border-slate-200 bg-white shadow-xs"
+      className="rounded-lg border border-[#E2E1DC] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden"
     >
-      <div className="space-y-3 border-b border-slate-200 p-4 sm:p-5">
+      {/* Header and Filter Toolbar */}
+      <div className="space-y-3 border-b border-[#EAE9E4] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 id="work-items-heading" className="text-base font-semibold text-slate-900">
+            <h2 id="work-items-heading" className="text-sm font-semibold tracking-tight text-[#242520]">
               {title}
             </h2>
-            {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+            {description && <p className="text-xs text-[#63625D] mt-0.5">{description}</p>}
           </div>
 
           <div className="flex items-center gap-2">
@@ -166,7 +166,7 @@ export default function WorkItemsSection({
               <button
                 type="button"
                 onClick={onCreateItem}
-                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-accent-strong focus:outline-none focus:ring-2 focus:ring-accent"
+                className="inline-flex items-center gap-1.5 rounded bg-[#B85D3B] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#9E4C2E] transition-colors"
               >
                 <svg className="size-3.5" viewBox="0 0 20 20" fill="currentColor">
                   <path
@@ -181,20 +181,21 @@ export default function WorkItemsSection({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3 pt-1">
-          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium text-slate-700 sm:max-w-xs">
+        {/* Filter Controls */}
+        <div className="flex flex-wrap items-end gap-2.5 pt-1">
+          <label className="flex min-w-44 flex-1 flex-col gap-1 text-[11px] font-semibold tracking-wider text-[#63625D] uppercase sm:max-w-xs">
             Search
             <input
               type="search"
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Title, description…"
+              placeholder="Title, description, ID…"
               className={controlClass}
             />
           </label>
 
           {!hideStatusFilter && (
-            <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+            <label className="flex flex-col gap-1 text-[11px] font-semibold tracking-wider text-[#63625D] uppercase">
               Status
               <select
                 value={effectiveStatus}
@@ -215,7 +216,7 @@ export default function WorkItemsSection({
             </label>
           )}
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold tracking-wider text-[#63625D] uppercase">
             Priority
             <select
               value={effectivePriority}
@@ -235,7 +236,7 @@ export default function WorkItemsSection({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold tracking-wider text-[#63625D] uppercase">
             Type
             <select
               value={effectiveType}
@@ -255,36 +256,42 @@ export default function WorkItemsSection({
             </select>
           </label>
 
-          <button
-            type="button"
-            onClick={handleClear}
-            disabled={!hasActiveFilters}
-            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:border-slate-200 disabled:hover:bg-white"
-          >
-            Clear
-          </button>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="h-8 rounded border border-[#E2E1DC] bg-white px-2.5 text-xs font-medium text-[#63625D] hover:bg-[#F7F7F5] hover:text-[#242520] transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
+        {/* Info Bar */}
+        <div className="flex items-center justify-between text-[11px] text-[#8E8D87] pt-0.5">
           <p aria-live="polite">
             {isLoading
-              ? 'Fetching records from server…'
+              ? 'Loading operational records…'
               : totalCount !== undefined
-              ? `Page ${pageIndex + 1} (${visibleItems.length} items) · ${totalCount} total matching records`
-              : `Page ${pageIndex + 1} (${visibleItems.length} items)`}
+              ? `Page ${pageIndex + 1} · ${visibleItems.length} displayed (${totalCount} in queue)`
+              : `Page ${pageIndex + 1} · ${visibleItems.length} records`}
           </p>
         </div>
       </div>
 
+      {/* Skeletons on loading */}
       {isLoading ? (
-        <div className="px-4 py-16 text-center">
-          <div className="inline-block size-6 animate-spin rounded-full border-2 border-slate-300 border-t-accent" />
-          <p className="mt-2 text-sm text-slate-600">Loading work items…</p>
+        <div className="p-4 space-y-3">
+          <div className="h-9 w-full bg-[#F7F7F5] rounded animate-pulse" />
+          <div className="h-9 w-full bg-[#FAFAF9] rounded animate-pulse" />
+          <div className="h-9 w-full bg-[#F7F7F5] rounded animate-pulse" />
+          <div className="h-9 w-full bg-[#FAFAF9] rounded animate-pulse" />
+          <div className="h-9 w-full bg-[#F7F7F5] rounded animate-pulse" />
         </div>
       ) : error ? (
         <div className="px-4 py-12 text-center">
-          <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-red-100 text-red-600">
-            <svg className="size-5" viewBox="0 0 20 20" fill="currentColor">
+          <div className="mx-auto flex size-9 items-center justify-center rounded bg-[#FDF0EE] text-[#A6261E] mb-2.5">
+            <svg className="size-4" viewBox="0 0 20 20" fill="currentColor">
               <path
                 fillRule="evenodd"
                 d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
@@ -292,52 +299,52 @@ export default function WorkItemsSection({
               />
             </svg>
           </div>
-          <p className="mt-2 text-sm font-semibold text-slate-900">Failed to load work items</p>
-          <p className="mt-1 text-xs text-slate-600">{error}</p>
+          <p className="text-xs font-semibold text-[#242520]">Failed to load work items</p>
+          <p className="mt-0.5 text-xs text-[#63625D]">{error}</p>
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
-              className="mt-4 inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-strong"
+              className="mt-3.5 inline-flex items-center rounded border border-[#E2E1DC] bg-white px-3 py-1.5 text-xs font-medium text-[#242520] hover:bg-[#F7F7F5] transition-colors"
             >
-              Retry
+              Retry request
             </button>
           )}
         </div>
       ) : visibleItems.length === 0 ? (
         <div className="px-4 py-14 text-center">
           {hasActiveFilters ? (
-            <>
-              <p className="text-sm font-medium text-slate-900">
-                No work items match your search and filters
+            <div className="max-w-sm mx-auto space-y-2">
+              <p className="text-xs font-semibold text-[#242520]">
+                No matching work items
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Try adjusting your search criteria or resetting filters.
+              <p className="text-xs text-[#63625D]">
+                No items match your active search or filters. Reset the filters to view all records in this queue.
               </p>
               <button
                 type="button"
                 onClick={handleClear}
-                className="mt-4 inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                className="mt-2 inline-flex items-center rounded border border-[#E2E1DC] bg-white px-3 py-1.5 text-xs font-medium text-[#242520] hover:bg-[#F7F7F5] transition-colors"
               >
-                Clear filters
+                Reset filters
               </button>
-            </>
+            </div>
           ) : (
-            <>
-              <p className="text-sm font-medium text-slate-900">No work items found</p>
-              <p className="mt-1 text-xs text-slate-500">
-                There are currently no items in this operational queue.
+            <div className="max-w-sm mx-auto space-y-2">
+              <p className="text-xs font-semibold text-[#242520]">No work items in queue</p>
+              <p className="text-xs text-[#63625D]">
+                There are currently no records in this operations view.
               </p>
               {canCreate && onCreateItem && (
                 <button
                   type="button"
                   onClick={onCreateItem}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-strong"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded bg-[#B85D3B] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#9E4C2E] transition-colors"
                 >
-                  Create first work item
+                  Create work item
                 </button>
               )}
-            </>
+            </div>
           )}
         </div>
       ) : (
@@ -350,27 +357,25 @@ export default function WorkItemsSection({
           />
 
           {showPagination && (
-            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-4 py-3 sm:px-6">
-              <div className="text-xs text-slate-500">
-                Page <span className="font-semibold text-slate-700">{pageIndex + 1}</span>
-                {totalCount !== undefined && (
-                  <span> &middot; {totalCount} total matching records</span>
-                )}
+            <div className="flex items-center justify-between border-t border-[#EAE9E4] bg-[#FAF9F7] px-4 py-2.5">
+              <div className="text-[11px] text-[#63625D]">
+                Page <span className="font-semibold text-[#242520]">{pageIndex + 1}</span>
+                {totalCount !== undefined && <span> &middot; {totalCount} total records</span>}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={onPrevPage}
                   disabled={!hasPrevPage || isLoading}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center rounded border border-[#E2E1DC] bg-white px-2.5 py-1 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                 >
-                  &larr; Previous
+                  &larr; Prev
                 </button>
                 <button
                   type="button"
                   onClick={onNextPage}
                   disabled={!hasNextPage || isLoading}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center rounded border border-[#E2E1DC] bg-white px-2.5 py-1 text-xs font-medium text-[#4A4944] hover:bg-[#F7F7F5] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                 >
                   Next &rarr;
                 </button>
