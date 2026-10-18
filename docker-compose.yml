@@ -1,14 +1,13 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: newtonite-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-newtonite}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +20,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: newtonite-backend
     restart: unless-stopped
     depends_on:
       db:
@@ -36,16 +34,21 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/app:/app/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: newtonite-frontend
     restart: unless-stopped
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     environment:
       VITE_API_BASE_URL: http://backend:8000
     ports:
