@@ -51,9 +51,44 @@ def alembic_config() -> Config:
     return Config(str(BACKEND_DIR / "alembic.ini"))
 
 
+def _ensure_test_database_exists() -> None:
+    """Create the (already name-checked) test database if it is missing, so `uv run pytest` works
+    on a fresh checkout without a manual `createdb` step."""
+    import asyncpg
+
+    url = make_url(TEST_DATABASE_URL)
+
+    async def _create() -> None:
+        try:
+            conn = await asyncpg.connect(
+                user=url.username,
+                password=url.password,
+                host=url.host,
+                port=url.port,
+                database=url.database,
+            )
+        except asyncpg.InvalidCatalogNameError:
+            admin = await asyncpg.connect(
+                user=url.username,
+                password=url.password,
+                host=url.host,
+                port=url.port,
+                database="postgres",
+            )
+            try:
+                await admin.execute(f'CREATE DATABASE "{url.database}"')
+            finally:
+                await admin.close()
+        else:
+            await conn.close()
+
+    asyncio.run(_create())
+
+
 @pytest.fixture(scope="session", autouse=True)
 def migrated_database() -> None:
     """Bring the dedicated test database to the latest revision (also exercises the migration)."""
+    _ensure_test_database_exists()
     command.upgrade(alembic_config(), "head")
 
 

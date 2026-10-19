@@ -222,10 +222,9 @@ uv run ruff format --check .
 uv run ruff format .
 ```
 
-**Test Database Safeguards:** Tests execute strictly against `TEST_DATABASE_URL` (default: `postgresql+asyncpg://postgres:postgres@localhost:5432/test_newtonite`) and enforce that the database name must contain `"test"` before executing destructive `TRUNCATE` operations or migration downgrades. Create the test database once with:
-```bash
-docker compose exec db createdb -U postgres test_newtonite
-```
+**Test Database Safeguards:** Tests execute strictly against `TEST_DATABASE_URL` (default: `postgresql+asyncpg://postgres:postgres@localhost:5432/test_newtonite`) and enforce that the database name must contain `"test"` before executing destructive `TRUNCATE` operations or migration downgrades. The test database is created automatically on the first run if it does not exist (the configured user
+needs the `CREATEDB` privilege; the default `postgres` user has it). Start PostgreSQL first with
+`docker compose up -d db`, then run `uv run pytest` - no manual `createdb` step is needed.
 Concurrency tests leverage PostgreSQL row-level locks and barrier fixtures (`rendezvous`) to verify race conditions deterministically.
 
 ### Frontend Quality Gates
