@@ -160,6 +160,33 @@ async def test_pagination_validation(async_client: AsyncClient, world: World) ->
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_cursor"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '["2026-01-01T00:00:00+00:00", 5]',  # non-string id used to crash with a 500
+        '[5, "ffffffff-ffff-4fff-8fff-ffffffffffff"]',
+        '["0001-01-01T00:00:00+14:00", "ffffffff-ffff-4fff-8fff-ffffffffffff"]',
+        '["9999-12-31T23:59:59-14:00", "ffffffff-ffff-4fff-8fff-ffffffffffff"]',
+        '["2026-01-01T00:00:00", "ffffffff-ffff-4fff-8fff-ffffffffffff"]',  # naive
+    ],
+)
+@pytest.mark.parametrize(
+    "path", ["/api/v1/items", "/api/v1/dashboard?view=assigned_to_me"]
+)
+async def test_malformed_cursors_are_400_not_500(
+    crash_client: AsyncClient, world: World, raw: str, path: str
+) -> None:
+    import base64
+
+    cursor = base64.urlsafe_b64encode(raw.encode()).decode()
+    sep = "&" if "?" in path else "?"
+    res = await crash_client.get(
+        f"{path}{sep}cursor={cursor}", headers=world.headers(world.member)
+    )
+    assert res.status_code == 400, res.text
+    assert res.json()["error"]["code"] == "invalid_cursor"
+
+
 # ------------------------------------------------------------------------------ workflow
 async def step(client, world, user, item_id, to, version):
     return await client.post(
