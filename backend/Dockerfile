@@ -26,4 +26,6 @@ ENV UV_NO_SYNC=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply migrations on every start (idempotent), optionally load the dev demo data, then serve.
+# Inline `sh -c` (not a script file) so Windows CRLF checkouts cannot break the entrypoint.
+CMD ["sh", "-c", "alembic upgrade head && if [ \"$SEED_DEMO_DATA\" = \"true\" ]; then python -m app.seed; fi && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]

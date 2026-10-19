@@ -38,14 +38,16 @@ Start all three container services (PostgreSQL, Backend, Frontend):
 docker compose up --build -d
 ```
 
-### 4. Initialize Database Schema
-> [!IMPORTANT]
-> The application requires running schema migrations explicitly on a fresh database:
+### 4. Database Schema and Demo Data (automatic)
+The backend container runs `alembic upgrade head` on every start, so a fresh database is ready as soon as
+the stack is up. With the default `.env.example` (`SEED_DEMO_DATA=true`) it also loads the demo users and
+sample items described under [Demo Accounts](#demo-accounts) (idempotent, and refused unless
+`ENVIRONMENT` is `development`/`dev`/`local`/`test`). To start with an empty database, set
+`SEED_DEMO_DATA=false` in `.env`. Both steps can still be run by hand:
 ```bash
-# Apply Alembic schema migrations
-docker compose exec backend uv run alembic upgrade head
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.seed
 ```
-*(Optional: If you wish to populate sample test data for local development, run `docker compose exec backend uv run python -m app.seed`)*
 
 ### 5. Access Points
 - **Frontend App:** [http://localhost:5173](http://localhost:5173)
@@ -137,10 +139,30 @@ The platform enforces strict, team-scoped role-based access control (RBAC). A us
 
 ### Workspace Provisioning & Account Access
 
-The application operates on an authentic user-driven authentication model rather than hardcoded demo accounts:
-1. **First-time Onboarding:** Navigate to [http://localhost:5173](http://localhost:5173), switch to the Registration screen, and provide your name, email, password, and desired workspace name. Registration creates the new team and automatically grants you the **Lead** role.
-2. **Subsequent Sign-in:** Authenticate with your registered email and password via `POST /api/v1/auth/login`.
-3. **Optional Local Seed Fixtures:** For developers needing initial sample items or multi-role fixtures in an empty local database, an optional developer utility is available (`uv run python -m app.seed`). This script generates sample items across "Platform Ops" and "Customer Support" for manual testing, and is strictly blocked when `ENVIRONMENT=production`.
+There are two ways to get an account:
+1. **Registration (new workspace):** open [http://localhost:5173](http://localhost:5173), switch to Registration and
+   provide name, email, password and a workspace name. This creates a new team with you as its **Lead**.
+   Registration never joins an existing team, and there is no membership-invitation endpoint yet (see Known
+   Limitations), so a self-registered workspace has exactly one user.
+2. **Demo accounts (for exercising every role):** created by the local seed (`SEED_DEMO_DATA=true`, or
+   `uv run python -m app.seed`). The seed is blocked when `ENVIRONMENT=production`.
+
+#### Demo Accounts
+Every demo account uses the password `demo-password-123` (local development only).
+
+| Email | Platform Ops | Customer Support |
+|---|---|---|
+| `alice.lead@demo.test` | Lead | - |
+| `bob.member@demo.test` | Member | - |
+| `carol.admin@demo.test` | Admin | - |
+| `dave.viewer@demo.test` | Viewer | - |
+| `erin.lead@demo.test` | Member | Lead |
+| `frank.member@demo.test` | - | Member |
+| `grace.admin@demo.test` | - | Admin |
+| `henry.disabled@demo.test` | Member (account disabled - login is rejected) | - |
+
+The seed also creates 10 sample work items across both teams in different states (open, in progress,
+awaiting approval, resolved, closed).
 
 ---
 

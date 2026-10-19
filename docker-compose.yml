@@ -30,6 +30,7 @@ services:
       APP_NAME: ${APP_NAME:-Operations Under Pressure}
       DEBUG: ${DEBUG:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     ports:
       - "8000:8000"
     volumes:
