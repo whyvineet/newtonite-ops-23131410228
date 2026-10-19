@@ -138,7 +138,7 @@ As operations teams resolve hundreds or thousands of work items, loading unbound
 
 ### Choice (Implemented & Tested)
 - **Keyset Cursor Pagination (`(created_at, id)`):**
-  Work item, activity, and comment lists use opaque base64-encoded keyset cursors. PostgreSQL executes cursor queries in $O(1)$ time via composite indexes:
+  Work item, activity, and comment lists use opaque base64-encoded keyset cursors. When a `team_id` filter is supplied (the UI always sends one) PostgreSQL serves each page as an index range scan on `ix_work_items_team_created`, so page cost does not grow with cursor depth. Without `team_id` the query spans all of the caller's teams and the planner may choose a sequential scan, which is acceptable at this scale:
   ```sql
   WHERE tuple(created_at, id) < tuple(:cursor_created_at, :cursor_id)
   ORDER BY created_at DESC, id DESC

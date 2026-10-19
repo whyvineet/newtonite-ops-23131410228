@@ -19,6 +19,19 @@ An internal work-management system that enables operations teams to create, assi
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["Browser (React + Vite)"] -- "/api/v1 + JWT" --> API["FastAPI"]
+    API -- "one transaction per change:<br/>item + activity event + idempotency record" --> DB[("PostgreSQL")]
+```
+
+All authorization, workflow and concurrency rules run in the API (`app/services/`); the UI only mirrors them for
+display. There is no background worker (see Known Limitations).
+
+---
+
 ## Quickstart with Docker Compose (Recommended)
 
 ### 1. Prerequisites
@@ -112,7 +125,7 @@ Public registration (`POST /api/v1/auth/register`) strictly follows the **new wo
 1. **Forbidden Role Field:** The registration payload accepts `name`, `email`, `password`, and `team_name`. Any client attempting to supply `role` (`admin`, `lead`, etc.) is rejected with `422 Unprocessable Entity` (`extra="forbid"`).
 2. **Strict Workspace Ownership:** The newly registered user receives the **Lead** role strictly within the newly created team workspace they own.
 3. **No Unauthenticated Team Hijacking:** Registration never attaches a registrant to an existing team. If the requested team name already exists, the server returns an explicit `409 Conflict` (`team_already_exists`) and leaves the existing team and its memberships untouched.
-4. **Database Uniqueness & Concurrency:** Case-insensitive email uniqueness and team name uniqueness are enforced at the PostgreSQL constraint level. Concurrent duplicate attempts are translated into clean `409 Conflict` client responses instead of unhandled 500s.
+4. **Database Uniqueness & Concurrency:** Case-insensitive email uniqueness (emails are stored lower-cased under a unique constraint) and exact-match team name uniqueness (team names are case-sensitive, so `Ops` and `ops` can coexist) are enforced at the PostgreSQL constraint level. Concurrent duplicate attempts are translated into clean `409 Conflict` client responses instead of unhandled 500s.
 5. **Transactional Invariant:** User creation, team creation, and membership creation execute within a single atomic database transaction. Any failure results in an immediate rollback leaving zero partial state.
 6. **Password Security:** Passwords require a minimum of 8 characters, are hashed using Argon2id, and password hashes are never exposed in responses or tokens.
 7. **Production Secret Enforcement:** If `ENVIRONMENT=production`, application startup fails fast if the default development example secret is detected or if `SECRET_KEY` is shorter than 32 characters.
@@ -127,7 +140,8 @@ The platform enforces strict, team-scoped role-based access control (RBAC). A us
 | **Create work items** | Yes | Yes | Yes | No |
 | **Claim open unassigned items** | Yes | Yes | Yes | No |
 | **Execute assigned work & submit for approval** | Yes | Yes | Assignee only | No |
-| **Edit basic fields & change priority** | Yes | Yes | Creator/Assignee only | No |
+| **Edit basic fields (title, description, type, due date)** | Yes | Yes | Creator/Assignee only | No |
+| **Change priority** | Yes | Yes | No | No |
 | **Assign / reassign work items** | Yes | Yes | No | No |
 | **Close resolved items** | Yes | Yes | No | No |
 | **Approve items in `AWAITING_APPROVAL`** | **Yes** | **No** (Deliberate separation) | **No** | **No** |
@@ -250,5 +264,18 @@ A lightweight GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every
 
 - **Transactional Outbox & Background Worker:** Intentionally deferred in favor of synchronous transactional integrity and bounded cursor pagination. Work item mutations, audit events, and idempotency records are committed atomically in PostgreSQL without external message broker dependencies (e.g. Redis, Kafka, Celery).
 - **Membership Administration Endpoints:** Role policies are defined and enforced in `app/services/permissions.py`, but administrative member invite/removal endpoints are deferred.
-- **Search Indexing:** Text search (`q`) uses index-assisted PostgreSQL `ILIKE` substring matching suitable for team-scale operations queues rather than full-text trigram (`pg_trgm`) indexes.
+- **Search Indexing:** Text search (`q`) is a case-insensitive substring `ILIKE` on title and description. There is no trigram or full-text index, so PostgreSQL filters rows sequentially; this is fine for tens of thousands of items but grows linearly. A `pg_trgm` GIN index is the next step.
 - **Lead Self-Approval:** A Team Lead who creates or is assigned an item can approve it; an explicit four-eyes principle was not specified.
+- **Authentication Hardening:** No rate limiting or lockout on login/registration. The 60-minute HS256 access token is kept in `localStorage` and cannot be revoked server-side except by disabling the account (which is checked on every request).
+- **Comment Retries:** Creating a comment is not idempotent. The UI disables the button while a request is in flight, but a retried request after a network timeout can create a duplicate comment.
+- **Workflow:** There is no "send back" transition; a Lead can only approve (`awaiting_approval` -> `resolved`).
+- **Optimistic UI:** Not implemented. The UI refetches after each action and shows a conflict banner on `409`; there is no optimistic update/rollback and no frontend test suite.
+- **Frontend Container:** `docker compose` runs the Vite dev server (a development setup, not a production build).
+
+## If I Had Another Week
+
+1. Transactional outbox plus a worker (retries, attempt cap, idempotent handler) for assignee notifications.
+2. Membership administration (invite, remove, change role) so multi-role teams can be built without the seed.
+3. `pg_trgm` index for search; login rate limiting; cookie-based or refresh-token sessions.
+4. A "send back" transition and an optional four-eyes rule for approvals.
+5. Idempotency keys for comments, a cleanup job for `idempotency_keys`, and frontend tests for conflict handling.
