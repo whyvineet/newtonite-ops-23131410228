@@ -1,10 +1,10 @@
+from httpx import AsyncClient
+from sqlalchemy import func, select
+
 from app.core.security import create_access_token
 from app.db.session import get_session_factory, transaction
 from app.models import ActivityEvent, Team, User, WorkItem
 from app.seed import _seed
-from httpx import AsyncClient
-from sqlalchemy import func, select
-
 from tests.helpers import count_rows
 
 
