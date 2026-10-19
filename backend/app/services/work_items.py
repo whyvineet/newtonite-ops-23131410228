@@ -274,7 +274,7 @@ async def update_item(
 
     if provided & _BASIC_FIELDS:
         require(Action.EDIT_BASIC, role, user_id=user.id, item=item)
-    if "priority" in provided:
+    if "priority" in provided and payload.priority.value != item.priority:
         require(Action.CHANGE_PRIORITY, role, user_id=user.id, item=item)
 
     _check_version(item, payload.expected_version)

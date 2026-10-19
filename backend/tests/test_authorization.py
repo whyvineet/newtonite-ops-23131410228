@@ -271,6 +271,26 @@ async def test_priority_changes_are_lead_or_admin_only(
     assert await event_types(item.id) == ["priority_changed"]
 
 
+async def test_member_edit_resubmitting_unchanged_priority_is_allowed(
+    async_client: AsyncClient, world: World
+) -> None:
+    """The edit form always sends the current priority; that must not count as a priority change."""
+    item = await world.make_item(created_by_id=world.member.id)
+    ok = await patch(
+        async_client, world, world.member, item, title="renamed", priority="normal"
+    )
+    assert ok.status_code == 200 and ok.json()["title"] == "renamed"
+    assert await event_types(item.id) == ["item_updated"]
+
+    fresh = await db_item(item.id)
+    denied = await patch(
+        async_client, world, world.member, fresh, title="again", priority="urgent"
+    )
+    assert denied.status_code == 403
+    after = await db_item(item.id)
+    assert after.title == "renamed" and after.version == fresh.version
+
+
 # ------------------------------------------------------------------------------ claim / close / comment
 async def test_viewer_cannot_claim(async_client: AsyncClient, world: World) -> None:
     item = await world.make_item()
