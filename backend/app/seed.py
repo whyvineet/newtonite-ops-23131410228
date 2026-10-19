@@ -8,11 +8,13 @@ The command refuses to run when ENVIRONMENT is production-like.
 """
 
 import asyncio
+import os
 import sys
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,6 +161,34 @@ ITEMS: list[tuple[str, str, str, ItemType, Priority, Status, str | None, str]] =
 ]
 
 
+MAX_BULK_ITEMS = 200_000
+_BULK_TITLES = {
+    ItemType.INCIDENT: "Service alert",
+    ItemType.CUSTOMER_ISSUE: "Customer escalation",
+    ItemType.PAYMENT: "Payment reconciliation",
+    ItemType.COMPLIANCE: "Compliance evidence request",
+    ItemType.TASK: "Routine maintenance",
+}
+# Weighted toward open work, like a real queue.
+_BULK_STATUSES = [Status.OPEN] * 3 + [
+    Status.IN_PROGRESS,
+    Status.AWAITING_APPROVAL,
+    Status.RESOLVED,
+    Status.CLOSED,
+]
+
+
+def _bulk_count() -> int:
+    raw = os.environ.get("SEED_BULK_ITEMS", "0").strip() or "0"
+    try:
+        count = int(raw)
+    except ValueError:
+        sys.exit(f"SEED_BULK_ITEMS must be an integer, got {raw!r}")
+    if not 0 <= count <= MAX_BULK_ITEMS:
+        sys.exit(f"SEED_BULK_ITEMS must be between 0 and {MAX_BULK_ITEMS}")
+    return count
+
+
 def _guard_environment() -> None:
     environment = get_settings().environment.strip().lower()
     if environment not in _ALLOWED_ENVIRONMENTS:
@@ -168,7 +198,7 @@ def _guard_environment() -> None:
         )
 
 
-async def _seed(session: AsyncSession) -> dict[str, int]:
+async def _seed(session: AsyncSession, bulk_items: int = 0) -> dict[str, int]:
     created = {"users": 0, "teams": 0, "memberships": 0, "items": 0}
     password_hash = hash_password(
         DEMO_PASSWORD
@@ -234,6 +264,90 @@ async def _seed(session: AsyncSession) -> dict[str, int]:
                     new_value={"title": title, "status": status.value, "seeded": True},
                 )
             )
+    if bulk_items:
+        created["items"] += await _seed_bulk(session, team_ids, user_ids, bulk_items)
+    return created
+
+
+async def _seed_bulk(
+    session: AsyncSession,
+    team_ids: dict[str, uuid.UUID],
+    user_ids: dict[str, uuid.UUID],
+    count: int,
+) -> int:
+    """Insert ``count`` deterministic generated items (plus their 'created' events) so pagination can
+    be demonstrated at realistic volume. Ids derive from the index, so re-running adds nothing."""
+    staff: dict[str, list[uuid.UUID]] = {name: [] for name in TEAMS}
+    for email, (_, is_active, roles) in USERS.items():
+        for team_name, role in roles.items():
+            if is_active and role is not Role.VIEWER:
+                staff[team_name].append(user_ids[email])
+
+    now = datetime.now(UTC)
+    types = list(ItemType)
+    priorities = list(Priority)
+    created = 0
+    for start in range(0, count, 1000):
+        rows: list[dict[str, Any]] = []
+        for i in range(start, min(start + 1000, count)):
+            team_name = TEAMS[i % len(TEAMS)]
+            people = staff[team_name]
+            item_type = types[i % len(types)]
+            status = _BULK_STATUSES[i % len(_BULK_STATUSES)]
+            created_at = now - timedelta(minutes=i)
+            assignee = (
+                people[i % len(people)] if status is not Status.OPEN or i % 2 else None
+            )
+            rows.append(
+                {
+                    "id": uuid.uuid5(_NAMESPACE, f"bulk-{i}"),
+                    "team_id": team_ids[team_name],
+                    "title": f"{_BULK_TITLES[item_type]} #{i + 1}",
+                    "description": f"Generated demo item {i + 1}.",
+                    "type": item_type.value,
+                    "priority": priorities[(i // 2) % len(priorities)].value,
+                    "status": status.value,
+                    "assignee_id": assignee,
+                    "created_by_id": people[(i + 1) % len(people)],
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                    "resolved_at": created_at
+                    if status in (Status.RESOLVED, Status.CLOSED)
+                    else None,
+                    "closed_at": created_at if status is Status.CLOSED else None,
+                }
+            )
+        inserted = (
+            (
+                await session.execute(
+                    pg_insert(WorkItem)
+                    .values(rows)
+                    .on_conflict_do_nothing(index_elements=["id"])
+                    .returning(WorkItem.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_id = {row["id"]: row for row in rows}
+        if inserted:
+            await session.execute(
+                insert(ActivityEvent),
+                [
+                    {
+                        "work_item_id": item_id,
+                        "actor_id": by_id[item_id]["created_by_id"],
+                        "event_type": EventType.ITEM_CREATED.value,
+                        "new_value": {
+                            "title": by_id[item_id]["title"],
+                            "status": by_id[item_id]["status"],
+                            "seeded": True,
+                        },
+                    }
+                    for item_id in inserted
+                ],
+            )
+        created += len(inserted)
     return created
 
 
@@ -245,9 +359,10 @@ def pg_now() -> Any:
 
 async def main() -> None:
     _guard_environment()
+    bulk_items = _bulk_count()
     try:
         async with get_session_factory()() as session, transaction(session):
-            created = await _seed(session)
+            created = await _seed(session, bulk_items)
         print(f"Seed complete (new rows): {created}")
         print(f"Demo password for every account (LOCAL DEV ONLY): {DEMO_PASSWORD}")
     finally:

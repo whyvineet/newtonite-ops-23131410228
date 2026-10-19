@@ -6,16 +6,16 @@ An internal work-management system that enables operations teams to create, assi
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Backend** | [FastAPI](https://fastapi.tiangolo.com/) + [Python 3.11](https://www.python.org/) | High-performance asynchronous REST API |
-| **Package Manager** | [uv](https://docs.astral.sh/uv/) | Fast, deterministic Python dependency resolution with `uv.lock` |
-| **ORM & Database** | [SQLAlchemy 2.0 (asyncio)](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [PostgreSQL 16](https://www.postgresql.org/) | Fully asynchronous relational persistence with row-level locks |
-| **Migrations** | [Alembic](https://alembic.sqlalchemy.org/) | Schema migration tracking with async engine support |
-| **Frontend** | [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vite.dev/) + [Tailwind CSS v4](https://tailwindcss.com/) | Responsive client application with dev proxy and robust conflict UX |
-| **Orchestration** | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/) | Reproducible multi-container stack (PostgreSQL, Backend, Frontend) |
-| **Testing & Linting**| [pytest](https://pytest.org/) + [HTTPX](https://www.python-httpx.org/) + [Ruff](https://docs.astral.sh/ruff/) + [ESLint](https://eslint.org/) | Automated test fixtures, PostgreSQL concurrency barriers, and linting |
-| **CI / Automation** | [GitHub Actions](https://github.com/features/actions) | Deterministic continuous integration running full test suites and lint gates |
+| Layer                       | Technology                                                                                                                                             | Purpose                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| **Backend**           | [FastAPI](https://fastapi.tiangolo.com/) + [Python 3.11](https://www.python.org/)                                                                        | High-performance asynchronous REST API                                       |
+| **Package Manager**   | [uv](https://docs.astral.sh/uv/)                                                                                                                        | Fast, deterministic Python dependency resolution with `uv.lock`            |
+| **ORM & Database**    | [SQLAlchemy 2.0 (asyncio)](https://www.sqlalchemy.org/) + [asyncpg](https://github.com/MagicStack/asyncpg) + [PostgreSQL 16](https://www.postgresql.org/) | Fully asynchronous relational persistence with row-level locks               |
+| **Migrations**        | [Alembic](https://alembic.sqlalchemy.org/)                                                                                                              | Schema migration tracking with async engine support                          |
+| **Frontend**          | [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vite.dev/) + [Tailwind CSS v4](https://tailwindcss.com/)   | Responsive client application with dev proxy and robust conflict UX          |
+| **Orchestration**     | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/)                                                                   | Reproducible multi-container stack (PostgreSQL, Backend, Frontend)           |
+| **Testing & Linting** | [pytest](https://pytest.org/) + [HTTPX](https://www.python-httpx.org/) + [Ruff](https://docs.astral.sh/ruff/) + [ESLint](https://eslint.org/)              | Automated test fixtures, PostgreSQL concurrency barriers, and linting        |
+| **CI / Automation**   | [GitHub Actions](https://github.com/features/actions)                                                                                                   | Deterministic continuous integration running full test suites and lint gates |
 
 ---
 
@@ -24,7 +24,7 @@ An internal work-management system that enables operations teams to create, assi
 ```mermaid
 flowchart LR
     Browser["Browser (React + Vite)"] -- "/api/v1 + JWT" --> API["FastAPI"]
-    API -- "one transaction per change:<br/>item + activity event + idempotency record" --> DB[("PostgreSQL")]
+    API -- "one transaction per change:<br>item + activity event + idempotency record" --> DB[("PostgreSQL")]
 ```
 
 All authorization, workflow and concurrency rules run in the API (`app/services/`); the UI only mirrors them for
@@ -35,34 +35,43 @@ display. There is no background worker (see Known Limitations).
 ## Quickstart with Docker Compose (Recommended)
 
 ### 1. Prerequisites
+
 - [Docker](https://docs.docker.com/get-docker/) (v24+)
 - [Docker Compose](https://docs.docker.com/compose/) (v2+)
 
 ### 2. Configure Environment
+
 Copy the template configuration into your local `.env`:
+
 ```bash
 cp .env.example .env
 ```
+
 *(On Windows PowerShell: `Copy-Item .env.example .env`)*
 
 ### 3. Launch Services
+
 Start all three container services (PostgreSQL, Backend, Frontend):
+
 ```bash
 docker compose up --build -d
 ```
 
 ### 4. Database Schema and Demo Data (automatic)
+
 The backend container runs `alembic upgrade head` on every start, so a fresh database is ready as soon as
 the stack is up. With the default `.env.example` (`SEED_DEMO_DATA=true`) it also loads the demo users and
 sample items described under [Demo Accounts](#demo-accounts) (idempotent, and refused unless
 `ENVIRONMENT` is `development`/`dev`/`local`/`test`). To start with an empty database, set
 `SEED_DEMO_DATA=false` in `.env`. Both steps can still be run by hand:
+
 ```bash
 docker compose exec backend alembic upgrade head
 docker compose exec backend python -m app.seed
 ```
 
 ### 5. Access Points
+
 - **Frontend App:** [http://localhost:5173](http://localhost:5173)
 - **Backend API Root:** [http://localhost:8000/](http://localhost:8000/)
 - **Interactive OpenAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -70,6 +79,7 @@ docker compose exec backend python -m app.seed
 - **PostgreSQL Database:** `localhost:5432` (credentials in `.env`)
 
 To shut down the containers:
+
 ```bash
 docker compose down
 ```
@@ -81,12 +91,15 @@ docker compose down
 If you prefer running services directly on your host:
 
 ### 1. Start Only PostgreSQL
+
 ```bash
 docker compose up -d db
 ```
 
 ### 2. Backend Setup
+
 From the `backend/` directory:
+
 ```bash
 cd backend
 
@@ -104,7 +117,9 @@ uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### 3. Frontend Setup
+
 From the `frontend/` directory in a separate terminal:
+
 ```bash
 cd frontend
 
@@ -114,6 +129,7 @@ npm ci
 # Start Vite development server
 npm run dev
 ```
+
 The frontend automatically proxies `/api` and `/health` requests to `http://localhost:8000`.
 
 ---
@@ -121,7 +137,9 @@ The frontend automatically proxies `/api` and `/health` requests to `http://loca
 ## Authentication, Registration, and Security Architecture
 
 ### Public Workspace Registration (Hardened)
+
 Public registration (`POST /api/v1/auth/register`) strictly follows the **new workspace creation** security model:
+
 1. **Forbidden Role Field:** The registration payload accepts `name`, `email`, `password`, and `team_name`. Any client attempting to supply `role` (`admin`, `lead`, etc.) is rejected with `422 Unprocessable Entity` (`extra="forbid"`).
 2. **Strict Workspace Ownership:** The newly registered user receives the **Lead** role strictly within the newly created team workspace they own.
 3. **No Unauthenticated Team Hijacking:** Registration never attaches a registrant to an existing team. If the requested team name already exists, the server returns an explicit `409 Conflict` (`team_already_exists`) and leaves the existing team and its memberships untouched.
@@ -134,19 +152,19 @@ Public registration (`POST /api/v1/auth/register`) strictly follows the **new wo
 
 The platform enforces strict, team-scoped role-based access control (RBAC). A user's role is scoped per team:
 
-| Capability | Lead | Admin | Member | Viewer |
-|---|:---:|:---:|:---:|:---:|
-| **View items, feeds, and activity** | Yes | Yes | Yes | Yes |
-| **Create work items** | Yes | Yes | Yes | No |
-| **Claim open unassigned items** | Yes | Yes | Yes | No |
-| **Execute assigned work & submit for approval** | Yes | Yes | Assignee only | No |
-| **Edit basic fields (title, description, type, due date)** | Yes | Yes | Creator/Assignee only | No |
-| **Change priority** | Yes | Yes | No | No |
-| **Assign / reassign work items** | Yes | Yes | No | No |
-| **Close resolved items** | Yes | Yes | No | No |
-| **Approve items in `AWAITING_APPROVAL`** | **Yes** | **No** (Deliberate separation) | **No** | **No** |
-| **Manage team memberships** | No | **Yes** | No | No |
-| **Comment on work items** | Yes | Yes | Yes | No |
+| Capability                                                       |     Lead     |                Admin                |        Member        |    Viewer    |
+| ---------------------------------------------------------------- | :-----------: | :----------------------------------: | :-------------------: | :----------: |
+| **View items, feeds, and activity**                        |      Yes      |                 Yes                 |          Yes          |     Yes     |
+| **Create work items**                                      |      Yes      |                 Yes                 |          Yes          |      No      |
+| **Claim open unassigned items**                            |      Yes      |                 Yes                 |          Yes          |      No      |
+| **Execute assigned work & submit for approval**            |      Yes      |                 Yes                 |     Assignee only     |      No      |
+| **Edit basic fields (title, description, type, due date)** |      Yes      |                 Yes                 | Creator/Assignee only |      No      |
+| **Change priority**                                        |      Yes      |                 Yes                 |          No          |      No      |
+| **Assign / reassign work items**                           |      Yes      |                 Yes                 |          No          |      No      |
+| **Close resolved items**                                   |      Yes      |                 Yes                 |          No          |      No      |
+| **Approve items in `AWAITING_APPROVAL`**                 | **Yes** | **No** (Deliberate separation) |     **No**     | **No** |
+| **Manage team memberships**                                |      No      |            **Yes**            |          No          |      No      |
+| **Comment on work items**                                  |      Yes      |                 Yes                 |          Yes          |      No      |
 
 > [!NOTE]
 > **Separation of Duties:** Admins manage operational configuration and memberships, but **only Team Leads** possess approval authority for work items awaiting sign-off.
@@ -154,6 +172,7 @@ The platform enforces strict, team-scoped role-based access control (RBAC). A us
 ### Workspace Provisioning & Account Access
 
 There are two ways to get an account:
+
 1. **Registration (new workspace):** open [http://localhost:5173](http://localhost:5173), switch to Registration and
    provide name, email, password and a workspace name. This creates a new team with you as its **Lead**.
    Registration never joins an existing team, and there is no membership-invitation endpoint yet (see Known
@@ -162,21 +181,26 @@ There are two ways to get an account:
    `uv run python -m app.seed`). The seed is blocked when `ENVIRONMENT=production`.
 
 #### Demo Accounts
+
 Every demo account uses the password `demo-password-123` (local development only).
 
-| Email | Platform Ops | Customer Support |
-|---|---|---|
-| `alice.lead@demo.test` | Lead | - |
-| `bob.member@demo.test` | Member | - |
-| `carol.admin@demo.test` | Admin | - |
-| `dave.viewer@demo.test` | Viewer | - |
-| `erin.lead@demo.test` | Member | Lead |
-| `frank.member@demo.test` | - | Member |
-| `grace.admin@demo.test` | - | Admin |
-| `henry.disabled@demo.test` | Member (account disabled - login is rejected) | - |
+| Email                        | Platform Ops                                  | Customer Support |
+| ---------------------------- | --------------------------------------------- | ---------------- |
+| `alice.lead@demo.test`     | Lead                                          | -                |
+| `bob.member@demo.test`     | Member                                        | -                |
+| `carol.admin@demo.test`    | Admin                                         | -                |
+| `dave.viewer@demo.test`    | Viewer                                        | -                |
+| `erin.lead@demo.test`      | Member                                        | Lead             |
+| `frank.member@demo.test`   | -                                             | Member           |
+| `grace.admin@demo.test`    | -                                             | Admin            |
+| `henry.disabled@demo.test` | Member (account disabled - login is rejected) | -                |
 
 The seed also creates 10 sample work items across both teams in different states (open, in progress,
 awaiting approval, resolved, closed).
+
+Set `SEED_BULK_ITEMS=3000` (the `.env.example` default) to also generate that many items across both teams
+so pagination can be exercised at realistic volume; set it to `0` for only the 10 hand-made items. The
+generated ids are deterministic, so re-running the seed never duplicates them.
 
 ---
 
@@ -184,25 +208,25 @@ awaiting approval, resolved, closed).
 
 All API endpoints are mounted under `/api/v1` (interactive OpenAPI documentation available at `/docs`).
 
-| Method & Path | Purpose | Concurrency & Validation Contract |
-|---|---|---|
-| `POST /auth/register` | Create a new team workspace and lead account | Accepts name, email, password, team_name (no role accepted) |
-| `POST /auth/login` | Authenticate and obtain JWT access token | Normalizes email; returns `401 invalid_credentials` for bad passwords or disabled accounts |
-| `GET /auth/me` | Current user profile and team memberships | Requires Bearer token; includes per-team roles |
-| `GET /teams` | List teams current user belongs to | Tenant-scoped |
-| `GET /teams/{id}/members` | Active members of a team | For assignment pickers; requires team membership |
-| `GET /items` | Keyset paginated work items | Filters: `team_id, status, priority, assignee_id, type, q`; keyset `cursor` + `limit` (1-100) |
-| `POST /items` | Create work item | Requires `Idempotency-Key` header; replayed responses return `Idempotent-Replayed: true` |
-| `GET /items/{id}` | Detailed work item view | Scoped to caller's team; foreign teams return `404` |
-| `PATCH /items/{id}` | Edit title, description, priority, type, due date | Optimistic concurrency: requires matching `expected_version` |
-| `POST /items/{id}/claim` | Atomically claim an open, unassigned item | Atomic SQL predicate: sets caller as assignee and moves status to `in_progress` |
-| `POST /items/{id}/assign` | Assign or reassign to team member | Requires Lead or Admin; verifies `expected_version` |
-| `POST /items/{id}/transition` | Workflow transition | Verifies valid workflow step and `expected_version` |
-| `GET /items/{id}/comments` | Keyset paginated comments | Bounded cursor pagination (`limit` default 20) |
-| `POST /items/{id}/comments` | Add operational comment | Recorded in audit timeline in same transaction |
-| `GET /items/{id}/activity` | Immutable audit trail | Bounded keyset pagination (`(created_at, id)`) ordered by `clock_timestamp()` |
-| `GET /dashboard` | Server-side constrained view pages | Views: `assigned_to_me`, `unassigned_urgent`, `awaiting_my_approval` |
-| `GET /dashboard/summary` | Real-time aggregate count metrics | Database SQL `COUNT(*)` aggregates across the entire team dataset |
+| Method & Path                   | Purpose                                           | Concurrency & Validation Contract                                                                   |
+| ------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `POST /auth/register`         | Create a new team workspace and lead account      | Accepts name, email, password, team_name (no role accepted)                                         |
+| `POST /auth/login`            | Authenticate and obtain JWT access token          | Normalizes email; returns `401 invalid_credentials` for bad passwords or disabled accounts        |
+| `GET /auth/me`                | Current user profile and team memberships         | Requires Bearer token; includes per-team roles                                                      |
+| `GET /teams`                  | List teams current user belongs to                | Tenant-scoped                                                                                       |
+| `GET /teams/{id}/members`     | Active members of a team                          | For assignment pickers; requires team membership                                                    |
+| `GET /items`                  | Keyset paginated work items                       | Filters: `team_id, status, priority, assignee_id, type, q`; keyset `cursor` + `limit` (1-100) |
+| `POST /items`                 | Create work item                                  | Requires `Idempotency-Key` header; replayed responses return `Idempotent-Replayed: true`        |
+| `GET /items/{id}`             | Detailed work item view                           | Scoped to caller's team; foreign teams return `404`                                               |
+| `PATCH /items/{id}`           | Edit title, description, priority, type, due date | Optimistic concurrency: requires matching `expected_version`                                      |
+| `POST /items/{id}/claim`      | Atomically claim an open, unassigned item         | Atomic SQL predicate: sets caller as assignee and moves status to `in_progress`                   |
+| `POST /items/{id}/assign`     | Assign or reassign to team member                 | Requires Lead or Admin; verifies `expected_version`                                               |
+| `POST /items/{id}/transition` | Workflow transition                               | Verifies valid workflow step and `expected_version`                                               |
+| `GET /items/{id}/comments`    | Keyset paginated comments                         | Bounded cursor pagination (`limit` default 20)                                                    |
+| `POST /items/{id}/comments`   | Add operational comment                           | Recorded in audit timeline in same transaction                                                      |
+| `GET /items/{id}/activity`    | Immutable audit trail                             | Bounded keyset pagination (`(created_at, id)`) ordered by `clock_timestamp()`                   |
+| `GET /dashboard`              | Server-side constrained view pages                | Views: `assigned_to_me`, `unassigned_urgent`, `awaiting_my_approval`                          |
+| `GET /dashboard/summary`      | Real-time aggregate count metrics                 | Database SQL `COUNT(*)` aggregates across the entire team dataset                                 |
 
 ---
 
@@ -223,7 +247,9 @@ All API endpoints are mounted under `/api/v1` (interactive OpenAPI documentation
 ## Testing & Quality Gates
 
 ### Backend Tests
+
 From the `backend/` directory:
+
 ```bash
 # Run complete test suite (unit, integration, concurrency)
 uv run pytest
@@ -242,7 +268,9 @@ needs the `CREATEDB` privilege; the default `postgres` user has it). Start Postg
 Concurrency tests leverage PostgreSQL row-level locks and barrier fixtures (`rendezvous`) to verify race conditions deterministically.
 
 ### Frontend Quality Gates
+
 From the `frontend/` directory:
+
 ```bash
 # Typecheck TypeScript and compile production bundle
 npm run build
@@ -252,7 +280,9 @@ npm run lint
 ```
 
 ### Continuous Integration (CI)
+
 A lightweight GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
+
 1. Spins up an isolated PostgreSQL 16 container service.
 2. Installs Python 3.11 and dependencies deterministically via `uv sync --frozen`.
 3. Runs `ruff check .`, `ruff format --check .`, and the full `pytest` suite against `test_newtonite`.
